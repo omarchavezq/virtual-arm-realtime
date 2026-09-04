@@ -1,0 +1,20 @@
+# Entornos y artefactos de build
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Cachés
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Configuración con datos de una máquina concreta.
+# `config.drill-001.toml` sí se versiona: es la plantilla de referencia y no
+# contiene la contraseña NTRIP, que vive en un archivo aparte fuera del repo.
+config.toml
+config.local.toml
+*.secret
+secrets/

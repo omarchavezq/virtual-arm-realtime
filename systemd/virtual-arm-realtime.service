@@ -1,0 +1,37 @@
+[Unit]
+Description=Brazo virtual RTK directo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=virtual-rtk
+Group=virtual-rtk
+SupplementaryGroups=dialout i2c
+WorkingDirectory=/opt/virtual-arm-realtime
+Environment=PYTHONUNBUFFERED=1
+Environment=VIRTUAL_ARM_CONFIG=/etc/virtual-arm-realtime/config.toml
+# Puerto fijo del proyecto: 8080. No se persigue el puerto que ponga el cliente en
+# su .env; si quiere consumirnos, apunta ahí.
+# 0.0.0.0 y no `::`: uvicorn con `::` deja fuera IPv4 pese a bindv6only=0, y la
+# interfaz dejaría de responder por la IP de Tailscale.
+ExecStart=/opt/virtual-arm-realtime/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --no-access-log --log-level info --timeout-graceful-shutdown 3
+Restart=always
+RestartSec=2
+# El stream SSE mantiene la conexión abierta: sin plazo, `systemctl stop` espera
+# a que gpsevt se desconecte y termina en SIGKILL con estado `failed`.
+TimeoutStopSec=15
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/virtual-arm-realtime /var/lib/virtual-rtk/secrets
+# /dev/serial0 es un enlace a /dev/ttyS0 en esta Pi; se listan los tres para no
+# depender de que systemd resuelva el enlace.
+DeviceAllow=/dev/serial0 rw
+DeviceAllow=/dev/ttyS0 rw
+DeviceAllow=/dev/ttyAMA0 rw
+DeviceAllow=/dev/i2c-1 rw
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Posición de la broca</title>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#17212a;background:#edf1f4;color-scheme:light}
+    *{box-sizing:border-box}body{margin:0}.page{max-width:960px;margin:auto;padding:16px}
+    header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    h1{font-size:20px;margin:0}h1 small{display:block;font-size:13px;font-weight:400;color:#5b6a75;margin-top:2px}
+    h2{font-size:16px;margin:0}h3{font-size:13px;margin:0 0 10px;color:#44525d}
+    .step-title{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+    .step{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#1769aa;color:#fff;font-size:13px;font-weight:800;flex:none}
+    .chip{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;background:#dfe5e9;font-size:12px;font-weight:700}
+    .chip:before{content:"";width:8px;height:8px;border-radius:50%;background:#7b8790}
+    .chip.ok:before{background:#16a05d}.chip.bad:before{background:#d13b3b}.chip.warn:before{background:#e59d18}
+    .banner{padding:11px 13px;border-radius:8px;background:#fff4db;color:#70500e;border:1px solid #eedaa4;font-size:13px;margin-bottom:10px}
+    .banner.ok{background:#e9f7ef;color:#12653c;border-color:#bde4ce}.banner.bad{background:#fdecec;color:#922f2f;border-color:#efc2c2}
+    .status{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:8px;margin-bottom:10px}
+    .metric,.panel{background:#fff;border:1px solid #dce2e6;border-radius:10px;box-shadow:0 1px 2px #0000000a}
+    .metric{padding:10px 12px;border-left:4px solid #cbd4da}
+    .metric.ok{border-left-color:#16a05d}.metric.warn{border-left-color:#e59d18}.metric.bad{border-left-color:#d13b3b}
+    .metric small{display:block;color:#687681;font-size:11px;margin-bottom:3px}
+    .metric strong{font-size:15px;display:block}.metric span{font-size:12px;color:#596873}
+    .panel{padding:16px;margin-bottom:10px}
+    .positions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .position{padding:11px;border-radius:8px;background:#f5f7f8}.position b{display:block;font-size:12px;margin-bottom:5px}
+    .coords{font-variant-numeric:tabular-nums;font-size:15px}
+    .stale .coords{color:#a03030;text-decoration:line-through}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+    .grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+    label{font-size:12px;color:#52616c}
+    input,select{display:block;width:100%;margin-top:4px;border:1px solid #cbd4da;border-radius:7px;padding:11px 10px;min-height:44px;background:#fff;color:#17212a;font:inherit;font-size:14px}
+    input:disabled{background:#eef1f3;color:#687681}
+    input:focus-visible,select:focus-visible,button:focus-visible{outline:3px solid #4a90e2aa;outline-offset:1px;border-color:#397fc5}
+    button{border:0;border-radius:7px;padding:12px 18px;min-height:44px;background:#1769aa;color:#fff;font-weight:700;font-size:14px;cursor:pointer}
+    button.secondary{background:#45545f}button:disabled{opacity:.45;cursor:not-allowed}
+    .actions{display:flex;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap}
+    .note{font-size:12px;color:#687681;margin:8px 0 0;line-height:1.45}
+    .message{font-size:12.5px;font-weight:700}.message.ok{color:#13824b}.message.bad{color:#b52f2f}
+    .ready{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#f4f6f7;border-radius:8px;padding:11px 12px;margin-bottom:10px;font-size:12.5px;flex-wrap:wrap}
+    .ready strong{font-variant-numeric:tabular-nums}.ready.ok{background:#e9f7ef;color:#12653c}.ready.bad{background:#fff4db;color:#70500e}.ready.danger{background:#fdecec;color:#922f2f;border:1px solid #efc2c2}.ready.danger b{letter-spacing:.03em}
+    button.danger{background:#b23a3a}
+    .progress{width:100%;height:6px;border-radius:99px;background:#dbe1e6;overflow:hidden;margin-top:8px}
+    .progress i{display:block;height:100%;width:0;background:#1769aa;transition:width .3s}
+    .ready.ok .progress i{background:#16a05d}
+    .check{display:flex;align-items:center;gap:9px;min-height:44px;font-size:13px;color:#3d4a54;cursor:pointer}
+    .check input{display:inline;width:20px;height:20px;min-height:20px;margin:0;flex:none}
+    .separator{height:1px;background:#e3e7ea;margin:14px 0}
+    .advanced{background:#f7f8f9;border-radius:8px;padding:12px}
+    .tag{font-size:11px;padding:3px 7px;background:#e8eef3;border-radius:99px;color:#435462}
+    .warning{display:none;margin-top:10px;padding:10px 12px;background:#fdecec;color:#922f2f;border-radius:7px;font-size:12.5px;line-height:1.5}
+    .warning ul{margin:0;padding-left:18px}
+    .retry{margin-top:8px}
+    @media(max-width:700px){.grid,.grid.four,.positions{grid-template-columns:1fr}.page{padding:10px}}
+  </style>
+</head>
+<body>
+<main class="page">
+  <header>
+    <h1>Posición de la broca<small>Calcula dónde está la punta a partir del GPS de la máquina.</small></h1>
+    <div id="connection" class="chip warn">Abriendo interfaz</div>
+  </header>
+  <div id="systemBanner" class="banner">Interfaz iniciada. Esperando datos del receptor GNSS.</div>
+
+  <section class="status" aria-label="Estado del sistema">
+    <div class="metric" id="mFix"><small>Señal GPS</small><strong id="fix">Sin datos</strong><span id="sigma">—</span></div>
+    <div class="metric" id="mNtrip"><small>Correcciones RTK</small><strong id="ntripState">—</strong><span id="ntripHint">—</span></div>
+    <div class="metric" id="mTilt"><small>Inclinación</small><strong id="pitch">—</strong><span id="tiltError">—</span></div>
+    <div class="metric" id="mHeading"><small>Orientación</small><strong id="heading">—</strong><span id="baseline">—</span></div>
+    <div class="metric" id="mMode"><small>Modelo activo</small><strong id="mode">—</strong><span id="age">—</span></div>
+  </section>
+
+  <section class="panel">
+    <h3>Posición en tiempo real</h3>
+    <div class="positions">
+      <div class="position"><b>Antena ANT1 · GPS real</b><div id="antennaCoords" class="coords">E — &nbsp; N —</div></div>
+      <div class="position"><b>Centro de la broca · calculado</b><div id="virtualCoords" class="coords">E — &nbsp; N —</div></div>
+    </div>
+    <div id="warning" class="warning"></div>
+  </section>
+
+  <section class="panel">
+    <h3>Puerto del receptor <span class="tag" id="portName">/dev/serial0</span></h3>
+    <div id="portState" class="ready"><span id="portText">Comprobando…</span><button id="portButton" type="button" disabled>Liberar puerto</button></div>
+    <p class="note">Libere el puerto para que otro servicio —por ejemplo <b>virtual-rtk</b>— pueda abrir el receptor sin apagar esta pantalla. Mientras esté liberado no se calcula la posición de la broca y se cortan las correcciones RTK. Al reiniciar el servicio vuelve a conectarse solo.</p>
+    <p id="portMessage" class="message" style="margin:6px 0 0"></p>
+  </section>
+
+  <section class="panel">
+    <h3>Sensor de inclinación (IMU) <span class="tag" id="imuUse">no se usa en este modo</span></h3>
+    <div id="imuState" class="ready"><span id="imuText">Comprobando…</span><strong id="imuRoll">—</strong></div>
+    <div class="grid four">
+      <div><label>Eje X<input id="axX" disabled></label></div>
+      <div><label>Eje Y<input id="axY" disabled></label></div>
+      <div><label>Eje Z · debe marcar ±1.000 g<input id="axZ" disabled></label></div>
+      <div><label>Mapeo y signos<input id="axCfg" disabled></label></div>
+    </div>
+    <ol class="note" style="padding-left:20px;margin:10px 0">
+      <li>Con la máquina quieta, pulse <b>Detectar ejes</b>. El eje Z debe quedar en ±1.000 g.</li>
+      <li>Nivele la máquina con los gatos, contra un nivel de burbuja, y pulse <b>Poner roll a cero</b>.</li>
+      <li>Incline la máquina a la derecha: el roll debe subir. Si baja, pulse <b>Invertir signo</b>.</li>
+    </ol>
+    <div class="actions">
+      <button id="imuDetect" class="secondary" type="button">Detectar ejes</button>
+      <button id="imuZero" class="secondary" type="button">Poner roll a cero</button>
+      <button id="imuInvert" class="secondary" type="button">Invertir signo</button>
+      <span id="imuMessage" class="message"></span>
+    </div>
+  </section>
+
+  <form id="ntripForm" class="panel">
+    <div class="step-title"><span class="step">1</span><h2>Conectar a correcciones RTK</h2></div>
+    <div class="grid four">
+      <label>Servidor NTRIP<input id="host" required placeholder="rtk.geodnet.com"></label>
+      <label>Puerto<input id="port" type="number" min="1" max="65535" required placeholder="2101"></label>
+      <label>Mountpoint (punto de montaje)<input id="mountpoint" required placeholder="AUTO"></label>
+      <label>Usuario<input id="username" required></label>
+    </div>
+    <div class="grid" style="margin-top:10px">
+      <label>Contraseña NTRIP<input id="password" type="password" autocomplete="new-password" placeholder="Dejar vacío para conservar"></label>
+      <div><p class="note" style="margin-top:24px">La contraseña guardada nunca se muestra. Escriba una nueva sólo para reemplazarla.</p></div>
+    </div>
+    <div class="actions"><button id="ntripButton" type="submit">Guardar conexión</button><span id="ntripMessage" class="message"></span></div>
+  </form>
+
+  <form id="modelForm" class="panel">
+    <div class="step-title"><span class="step">2</span><h2>Definir cómo se calculará la broca</h2></div>
+    <div class="grid">
+      <label>Sistema de coordenadas del topógrafo<input id="crs" required aria-describedby="crsHelp" placeholder="EPSG:32717"></label>
+      <label>Modelo de cálculo<select id="useImu"><option value="2d">2D directo · máquina nivelada</option><option value="pitch">2D + inclinación del GPS · sin IMU</option><option value="3d">3D · usa IMU e inclinación</option></select></label>
+    </div>
+    <p id="crsHelp" class="note">Debe ser una proyección en metros, exactamente la misma que usa el topógrafo en sus puntos. Ejemplo: EPSG:32717.</p>
+    <div id="modeHelp" class="banner ok" style="margin-top:10px;margin-bottom:0">Recomendado para estas pruebas: calcula Este/Norte sin depender de la IMU. Exige nivelar la máquina antes de perforar.</div>
+    <div class="actions"><button id="modelButton" type="submit">Guardar modelo</button><span id="modelMessage" class="message"></span></div>
+  </form>
+
+  <section class="panel">
+    <div class="step-title"><span class="step">3</span><h2>Calibrar el brazo horizontal</h2></div>
+    <div id="calibrationReady" class="ready bad">
+      <div style="flex:1 1 100%">
+        <span id="readyText">Esperando señal RTK fija y máquina detenida</span>
+        <div class="progress"><i id="readyBar"></i></div>
+      </div>
+      <strong id="sampleCount">0 de 360 épocas</strong>
+    </div>
+    <ol class="note" style="padding-left:20px;margin:0 0 10px">
+      <li>Coloque el centro de la broca exactamente sobre el punto del topógrafo.</li>
+      <li>Deje la máquina detenida y nivelada, en su posición real de trabajo, <b>alrededor de un minuto</b>. La barra se llena sola.</li>
+      <li>Ingrese las coordenadas del mismo punto y pulse calibrar.</li>
+    </ol>
+    <div class="grid">
+      <label>Este del punto topográfico<input id="targetE" type="number" step="0.001" inputmode="decimal" placeholder="816373.843"></label>
+      <label>Norte del punto topográfico<input id="targetN" type="number" step="0.001" inputmode="decimal" placeholder="9126361.129"></label>
+    </div>
+    <p class="note">Ingrese los valores completos, sin recortar dígitos.</p>
+    <div class="actions"><button id="calibrateButton" class="secondary" type="button" disabled>Calibrar automáticamente</button><span id="calibrationMessage" class="message"></span></div>
+    <p class="note">Se hace una sola vez. Después, verifique el resultado contra un segundo punto topográfico distinto al de calibración.</p>
+    <div class="separator"></div>
+    <div class="advanced">
+      <h3>Brazo guardado <span class="tag">resultado de calibración</span></h3>
+      <div class="grid four">
+        <label>Adelante, sobre la línea ANT1→ANT2 (m)<input id="forward" type="number" step="0.001" disabled></label>
+        <label>Izquierda, perpendicular a esa línea (m)<input id="left" type="number" step="0.001" disabled></label>
+        <label>Abajo desde ANT1 (m)<input id="down" type="number" min="0" step="0.001" disabled></label>
+        <div><label class="check"><input id="manualEdit" type="checkbox">Editar manualmente</label></div>
+      </div>
+      <p class="note">Estas medidas se toman sobre la línea que une las dos antenas, no sobre el eje de la máquina. Si mide con cinta desde el chasis y no coincide, es porque las antenas no están alineadas con la máquina: avise a soporte.</p>
+      <p id="downHelp" class="note"></p>
+      <div class="actions"><button id="leverButton" type="button" disabled>Guardar brazo manual</button><span id="leverMessage" class="message"></span></div>
+    </div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let loadedConfig=null,calibrationIsReady=false,lastEventAt=0,portReleased=false;
+const numeric=(v,d=3)=>Number.isFinite(v)?v.toFixed(d):'—';
+const FIX_LABEL={FIXED:'RTK fija',FLOAT:'RTK flotante',DGPS:'Diferencial',SINGLE:'Sin corrección',NONE:'Sin posición'};
+const NTRIP_LABEL={CONNECTED:'Conectado',CONNECTING:'Conectando…',ERROR:'Sin conexión con el servidor',DISCONNECTED:'Desconectado'};
+
+function showMessage(el,text,ok){
+  el.textContent=text;el.className=`message ${ok?'ok':'bad'}`;
+  clearTimeout(el._t);
+  if(text)el._t=setTimeout(()=>{el.textContent='';el.className='message'},8000);
+}
+function clearOn(formId,messageId){
+  const f=$(formId);['input','change'].forEach(ev=>f.addEventListener(ev,()=>{
+    const m=$(messageId);clearTimeout(m._t);m.textContent='';m.className='message';
+  }));
+}
+// El detail de FastAPI puede llegar como texto o como lista; nunca debe acabar
+// en pantalla como [object Object].
+function detailText(body,fallback){
+  const d=body&&body.detail;
+  if(typeof d==='string'&&d)return d;
+  if(Array.isArray(d))return d.map(e=>e&&e.msg?e.msg:JSON.stringify(e)).join(' · ');
+  return fallback;
+}
+function setMetric(id,state){$(id).className=`metric ${state||''}`.trim()}
+
+function basePayload(){
+  return{
+    ntrip:{host:loadedConfig.ntrip.host,port:loadedConfig.ntrip.port,mountpoint:loadedConfig.ntrip.mountpoint,username:loadedConfig.ntrip.username,password:null},
+    coordinates:{projected_crs:loadedConfig.coordinates.projected_crs},
+    lever:{...loadedConfig.lever},
+    calculation:{...loadedConfig.calculation}
+  };
+}
+function requireConfig(messageEl){
+  if(loadedConfig)return true;
+  showMessage(messageEl,'Todavía no se leyó la configuración del equipo. Pulse Reintentar arriba.',false);
+  return false;
+}
+function renderConfig(c){
+  loadedConfig=c;
+  $('host').value=c.ntrip.host;$('port').value=c.ntrip.port;$('mountpoint').value=c.ntrip.mountpoint;
+  $('username').value=c.ntrip.username;$('password').value='';
+  $('password').placeholder=c.ntrip.has_password?'Guardada · dejar vacío para conservar':'Ingrese la contraseña';
+  $('crs').value=c.coordinates.projected_crs;$('useImu').value=c.calculation.use_imu?'3d':(c.calculation.use_pitch?'pitch':'2d');
+  $('forward').value=c.lever.forward_m;$('left').value=c.lever.left_m;$('down').value=c.lever.down_m;
+  updateModeHelp();
+}
+async function loadConfig(){
+  const r=await fetch('/api/config');
+  if(!r.ok)throw new Error('No se pudo leer la configuración del equipo');
+  renderConfig(await r.json());
+}
+function bootstrap(){
+  loadConfig().then(()=>{
+    const old=$('bootError');if(old)old.remove();
+  }).catch(()=>{
+    if($('bootError'))return;
+    const box=document.createElement('div');
+    box.id='bootError';box.className='banner bad';
+    box.innerHTML='<b>No se pudo leer la configuración del equipo.</b> Compruebe que el servicio esté encendido.'+
+      '<div class="retry"><button type="button" id="retryButton">Reintentar</button></div>';
+    $('systemBanner').after(box);
+    $('retryButton').addEventListener('click',bootstrap);
+  });
+}
+async function saveConfig(payload,messageEl){
+  const r=await fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const body=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(detailText(body,'No se pudo guardar'));
+  renderConfig(body.config);
+  return body.config;
+}
+
+$('ntripForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(!requireConfig($('ntripMessage')))return;
+  const p=basePayload();
+  p.ntrip={host:$('host').value.trim(),port:Number($('port').value),mountpoint:$('mountpoint').value.trim(),username:$('username').value.trim(),password:$('password').value||null};
+  if(!loadedConfig.ntrip.has_password&&!p.ntrip.password){showMessage($('ntripMessage'),'Ingrese la contraseña NTRIP',false);return}
+  $('ntripButton').disabled=true;showMessage($('ntripMessage'),'Guardando…',true);
+  try{
+    const c=await saveConfig(p,$('ntripMessage'));
+    showMessage($('ntripMessage'),`Guardado: ${c.ntrip.mountpoint} en ${c.ntrip.host}, usuario ${c.ntrip.username}${p.ntrip.password?', contraseña actualizada':''}. Vigile «Correcciones RTK» arriba.`,true);
+  }catch(err){showMessage($('ntripMessage'),err.message,false)}
+  finally{$('ntripButton').disabled=false}
+});
+
+$('modelForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(!requireConfig($('modelMessage')))return;
+  const p=basePayload();
+  p.coordinates.projected_crs=$('crs').value.trim();
+  const sel=$('useImu').value;
+  p.calculation.use_imu=sel==='3d';
+  p.calculation.use_pitch=sel==='pitch';
+  const cambia=p.calculation.use_imu!==loadedConfig.calculation.use_imu||
+               p.calculation.use_pitch!==loadedConfig.calculation.use_pitch;
+  if(cambia&&!confirm('Cambiar el modelo puede desplazar la broca virtual. ¿Aplicar?')){
+    // Sin esto el desplegable se queda mostrando un modo que no está activo.
+    $('useImu').value=loadedConfig.calculation.use_imu?'3d':(loadedConfig.calculation.use_pitch?'pitch':'2d');
+    updateModeHelp();
+    showMessage($('modelMessage'),'Cambio cancelado. Sigue activo el modelo anterior.',true);
+    return;
+  }
+  $('modelButton').disabled=true;
+  try{
+    const c=await saveConfig(p,$('modelMessage'));
+    showMessage($('modelMessage'),`Guardado: ${c.coordinates.projected_crs}, modelo ${c.calculation.use_imu?'3D con IMU':(c.calculation.use_pitch?'2D + inclinación del GPS':'2D directo')}.`,true);
+  }catch(err){showMessage($('modelMessage'),err.message,false)}
+  finally{$('modelButton').disabled=false}
+});
+
+function updateModeHelp(){
+  const sel=$('useImu').value, is3d=sel==='3d', isPitch=sel==='pitch';
+  $('modeHelp').className=`banner ${is3d?'':'ok'}`;
+  $('modeHelp').textContent=is3d
+    ?'3D requiere IMU operativa y altura ANT1–broca confirmada. Sólo es fiable con la máquina detenida.'
+    :isPitch
+    ?'Recomendado. Corrige la inclinación con el dato de las dos antenas del GPS, sin usar la IMU. Queda sin corregir el balanceo lateral.'
+    :'Calcula Este/Norte ignorando la inclinación. Exige nivelar la máquina siempre igual antes de perforar.';
+  $('downHelp').textContent=(is3d||isPitch)
+    ?'«Abajo» es la altura vertical de ANT1 sobre la broca. La usa la corrección por inclinación.'
+    :'«Abajo» no afecta Este/Norte en modo 2D, pero sí la cota publicada de la broca. Anótela aunque no la use todavía.';
+}
+$('useImu').addEventListener('change',updateModeHelp);
+$('manualEdit').addEventListener('change',()=>{
+  const on=$('manualEdit').checked;
+  // «Abajo» se edita también en 2D: es el dato que hay que resolver antes de
+  // poder pasar a 3D, y la cota publicada depende de él en los dos modos.
+  $('forward').disabled=$('left').disabled=$('down').disabled=!on;
+  $('leverButton').disabled=!on;
+});
+$('leverButton').addEventListener('click',async()=>{
+  if(!requireConfig($('leverMessage')))return;
+  const values={forward_m:Number($('forward').value),left_m:Number($('left').value),down_m:Number($('down').value)};
+  for(const [k,label] of [['forward_m','Adelante'],['left_m','Izquierda'],['down_m','Abajo']]){
+    if($(k==='forward_m'?'forward':k==='left_m'?'left':'down').value.trim()===''||!Number.isFinite(values[k])){
+      showMessage($('leverMessage'),`Falta el valor de «${label}»`,false);return;
+    }
+  }
+  if(!confirm('La edición manual cambiará la posición virtual. ¿Aplicar estos valores?'))return;
+  $('leverButton').disabled=true;
+  try{
+    await saveConfig({...basePayload(),lever:values},$('leverMessage'));
+    showMessage($('leverMessage'),'Brazo guardado.',true);
+    $('manualEdit').checked=false;
+    $('forward').disabled=$('left').disabled=$('down').disabled=true;
+  }catch(err){showMessage($('leverMessage'),err.message,false)}
+  finally{$('leverButton').disabled=!$('manualEdit').checked}
+});
+
+async function imuAction(path,btn,ok){
+  $(btn).disabled=true;
+  try{
+    const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const b=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(detailText(b,'No se pudo aplicar'));
+    showMessage($('imuMessage'),ok(b),true);
+  }catch(err){showMessage($('imuMessage'),err.message,false)}
+  finally{$(btn).disabled=false}
+}
+$('imuDetect').addEventListener('click',()=>imuAction('/api/imu/detect-axes','imuDetect',
+  b=>`Vertical detectada en el eje ${b.detected.vertical_axis} (${b.detected.gravity_g.toFixed(3)} g). Mapeo aplicado: [${b.imu.axis_mapping}].`));
+$('imuZero').addEventListener('click',()=>{
+  if(!confirm('¿La máquina está nivelada contra una referencia externa? El valor actual pasará a ser el cero.'))return;
+  imuAction('/api/imu/zero','imuZero',b=>`Cero aplicado: offset ${b.imu.roll_offset_deg.toFixed(3)}°.`);
+});
+$('imuInvert').addEventListener('click',()=>imuAction('/api/imu/invert','imuInvert',
+  b=>`Signo ${b.imu.roll_invert?'invertido':'restaurado'}.`));
+
+$('portButton').addEventListener('click',async()=>{
+  const release=!portReleased;
+  if(release&&!confirm('Al liberar el puerto la broca deja de calcularse y se cortan las correcciones RTK, hasta que lo vuelva a conectar. ¿Continuar?'))return;
+  $('portButton').disabled=true;
+  try{
+    const r=await fetch('/api/gnss/port',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({released:release})});
+    const b=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(detailText(b,'No se pudo cambiar el estado del puerto'));
+    showMessage($('portMessage'),release?`Puerto ${b.port} liberado. Otro servicio ya puede abrirlo.`:`Puerto ${b.port} reconectado.`,true);
+  }catch(err){showMessage($('portMessage'),err.message,false)}
+  finally{$('portButton').disabled=false}
+});
+
+$('calibrateButton').addEventListener('click',async()=>{
+  const rawE=$('targetE').value.trim(),rawN=$('targetN').value.trim();
+  const east=Number(rawE),north=Number(rawN);
+  // Number('') vale 0 y 0 es finito: sin comprobar la cadena, un campo vacío
+  // entraba como coordenada cero y producía un brazo de miles de kilómetros.
+  if(rawE===''||rawN===''||!Number.isFinite(east)||!Number.isFinite(north)){
+    showMessage($('calibrationMessage'),'Escriba el Este y el Norte completos del punto',false);return;
+  }
+  if(!calibrationIsReady){showMessage($('calibrationMessage'),'Espere a que la barra se llene con la máquina detenida',false);return}
+  if(!confirm('Confirme: la broca está exactamente sobre ese punto y la máquina está detenida en posición de trabajo.'))return;
+  $('calibrateButton').disabled=true;showMessage($('calibrationMessage'),'Calculando…',true);
+  try{
+    const r=await fetch('/api/calibration/2d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({easting_m:east,northing_m:north})});
+    const body=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(detailText(body,'No se pudo calibrar'));
+    await loadConfig();
+    const l=body.lever;
+    showMessage($('calibrationMessage'),
+      `Brazo aplicado: ${numeric(l.forward_m)} m adelante, ${numeric(l.left_m)} m izquierda. `+
+      `${l.samples} épocas en ${numeric(l.window_s,0)} s, dispersión ±${(l.deviation_m*100).toFixed(1)} cm.`,true);
+  }catch(err){showMessage($('calibrationMessage'),err.message,false)}
+  finally{$('calibrateButton').disabled=!calibrationIsReady}
+});
+
+function updateTelemetry(t){
+  lastEventAt=Date.now();
+  const stale=t.data_age_ms>2000;
+  const warnings=t.quality.warnings||[];
+
+  const paused=Boolean(t.gnss.port_released);
+  $('connection').textContent=paused?'Puerto liberado':stale?'Dato antiguo':'Datos en vivo';
+  $('connection').className=`chip ${paused||stale?'bad':'ok'}`;
+
+  const imu=t.imu||{};
+  $('imuUse').textContent=imu.roll_used?'en uso para el cálculo':'no se usa en este modo';
+  $('imuState').className=`ready ${imu.ok?(Math.abs(imu.roll_deg)<1?'ok':'bad'):'danger'}`;
+  $('imuRoll').textContent=imu.ok?`roll ${imu.roll_deg.toFixed(2)}°`:'sin lectura';
+  $('imuText').textContent=imu.ok
+    ?(Math.abs(imu.roll_deg)<1?'Sensor respondiendo, máquina a nivel'
+      :`Máquina ladeada ${Math.abs(imu.roll_deg).toFixed(1)}° · ${(Math.abs(Math.sin(imu.roll_deg*Math.PI/180))*157.4).toFixed(0)} cm de error si no se corrige`)
+    :(imu.error||'Sin respuesta del sensor');
+  const g=imu.raw_g;
+  $('axX').value=g?g[0].toFixed(3)+' g':'—';
+  $('axY').value=g?g[1].toFixed(3)+' g':'—';
+  $('axZ').value=imu.mapped_g?imu.mapped_g[2].toFixed(3)+' g':'—';
+  $('axCfg').value=imu.axis_mapping?`[${imu.axis_mapping}] signos [${imu.axis_signs}]${imu.roll_invert?' · invertido':''}`:'—';
+
+  portReleased=Boolean(t.gnss.port_released);
+  $('portName').textContent=t.gnss.port||'/dev/serial0';
+  $('portState').className=`ready ${portReleased?'danger':t.gnss.connected?'ok':'bad'}`;
+  $('portText').innerHTML=portReleased?'<b>LIBERADO · no se calcula la broca</b>'
+    :t.gnss.connected?'Conectado y recibiendo':'Sin abrir · reintentando';
+  $('portButton').textContent=portReleased?'Volver a conectar':'Liberar puerto';
+  $('portButton').className=portReleased?'':'danger';
+  $('portButton').disabled=false;
+
+  if(portReleased){
+    $('systemBanner').className='banner bad';
+    $('systemBanner').textContent='Puerto del receptor liberado a propósito. No hay posición de la broca hasta volver a conectarlo aquí abajo.';
+  }else if(stale){
+    $('systemBanner').className='banner bad';
+    $('systemBanner').textContent=`Sin datos nuevos del receptor desde hace ${(t.data_age_ms/1000).toFixed(0)} s. La posición mostrada es antigua: no perfore con ella.`;
+  }else if(t.quality.mode==='PRECISION'&&!warnings.length){
+    $('systemBanner').className='banner ok';
+    $('systemBanner').textContent='Sistema en precisión. Posición de la broca válida.';
+  }else{
+    $('systemBanner').className='banner';
+    $('systemBanner').textContent='Sistema recibiendo datos, con avisos. Revise el detalle antes de calibrar o perforar.';
+  }
+
+  const fixOk=t.gnss.fix==='FIXED';
+  $('fix').textContent=FIX_LABEL[t.gnss.fix]||t.gnss.fix;
+  const sigma=t.gnss.sigma_horizontal_m;
+  $('sigma').textContent=Number.isFinite(sigma)?`precisión ±${(sigma*100).toFixed(1)} cm`:'precisión —';
+  setMetric('mFix',stale?'bad':fixOk?'ok':'warn');
+
+  const ns=t.ntrip.state;
+  $('ntripState').textContent=NTRIP_LABEL[ns]||ns;
+  $('ntripHint').textContent=ns==='CONNECTED'?'recibiendo correcciones':'la señal RTK no podrá fijar';
+  setMetric('mNtrip',ns==='CONNECTED'?'ok':ns==='CONNECTING'?'warn':'bad');
+
+  const pitch=t.attitude.pitch_deg,tilt=t.attitude.tilt_error_m;
+  if(Number.isFinite(pitch)){
+    $('pitch').textContent=`${Math.abs(pitch).toFixed(1)}°`;
+    if(Number.isFinite(tilt)){
+      $('tiltError').textContent=`descarta ≥ ${(tilt*100).toFixed(0)} cm`;
+      setMetric('mTilt',tilt>=0.05?'bad':tilt>=0.02?'warn':'ok');
+    }else{$('tiltError').textContent='corregida por el modelo';setMetric('mTilt','ok')}
+  }else{$('pitch').textContent='—';$('tiltError').textContent='sin rumbo';setMetric('mTilt','bad')}
+
+  const hd=t.attitude.heading_deg;
+  $('heading').textContent=Number.isFinite(hd)?`${hd.toFixed(2)}°`:'—';
+  const bl=t.attitude.baseline_m;
+  $('baseline').textContent=Number.isFinite(bl)
+    ?`antenas a ${bl.toFixed(2)} m${t.attitude.baseline_ok?'':` · bajo el mínimo de ${t.attitude.baseline_min_m} m`}`
+    :'—';
+  setMetric('mHeading',!t.attitude.heading_valid?'bad':t.attitude.baseline_ok?'ok':'warn');
+
+  $('mode').textContent=t.calculation_mode==='3D_IMU'?'3D con IMU'
+    :t.calculation_mode==='2D_PITCH'?'2D + inclinación':'2D directo';
+  $('age').textContent=`dato de ${(t.data_age_ms/1000).toFixed(1)} s`;
+  setMetric('mMode',stale?'bad':'ok');
+
+  $('antennaCoords').textContent=`E ${numeric(t.gnss.easting_m)}   N ${numeric(t.gnss.northing_m)}`;
+  const v=t.virtual_gps;
+  $('virtualCoords').textContent=v.valid?`E ${numeric(v.easting_m)}   N ${numeric(v.northing_m)}`:'No disponible';
+  document.querySelectorAll('.position').forEach(el=>el.classList.toggle('stale',stale));
+
+  $('warning').style.display=warnings.length?'block':'none';
+  $('warning').innerHTML=warnings.length?'<ul>'+warnings.map(w=>`<li>${w.replace(/[<>&]/g,'')}</li>`).join('')+'</ul>':'';
+
+  const c=t.calibration||{},count=c.fixed_samples||0,required=c.required_samples||1;
+  calibrationIsReady=Boolean(c.ready)&&!stale;
+  $('sampleCount').textContent=c.ready?`${count} épocas capturadas`:`${count} de ${required} épocas`;
+  $('readyBar').style.width=`${Math.min(100,Math.round(count/required*100))}%`;
+  $('calibrationReady').className=`ready ${calibrationIsReady?'ok':'bad'}`;
+  $('readyText').textContent=calibrationIsReady?'Listo para calibrar'
+    :portReleased?'Puerto del receptor liberado: reconéctelo para poder calibrar'
+    :stale?'Sin datos nuevos del receptor'
+    :!fixOk?'Esperando señal RTK fija'
+    :!c.stationary?'La máquina se está moviendo: deténgala'
+    :'Capturando épocas, mantenga la máquina quieta';
+  $('calibrateButton').disabled=!calibrationIsReady;
+}
+
+const stream=new EventSource('/api/v1/telemetry/stream');
+stream.onopen=()=>{
+  $('connection').textContent='Interfaz conectada';$('connection').className='chip warn';
+  $('systemBanner').textContent='Interfaz disponible. Esperando datos del GNSS conectado a la RPi.';
+};
+stream.onmessage=e=>{try{updateTelemetry(JSON.parse(e.data))}catch(err){console.error(err)}};
+stream.onerror=()=>{
+  $('connection').textContent='Servicio desconectado';$('connection').className='chip bad';
+  $('systemBanner').className='banner bad';
+  $('systemBanner').textContent='No hay conexión con el servicio local. La pantalla está congelada.';
+  calibrationIsReady=false;$('calibrateButton').disabled=true;
+  document.querySelectorAll('.position').forEach(el=>el.classList.add('stale'));
+};
+// Vigilante propio: si el servicio deja de emitir sin cerrar el socket, la
+// pantalla tiene que delatarse sola.
+setInterval(()=>{
+  if(lastEventAt&&Date.now()-lastEventAt>4000){
+    $('connection').textContent='Sin datos';$('connection').className='chip bad';
+    $('systemBanner').className='banner bad';
+    $('systemBanner').textContent='El servicio dejó de enviar datos. No perfore con la posición en pantalla.';
+    calibrationIsReady=false;$('calibrateButton').disabled=true;
+    document.querySelectorAll('.position').forEach(el=>el.classList.add('stale'));
+  }
+},2000);
+
+clearOn('ntripForm','ntripMessage');clearOn('modelForm','modelMessage');
+bootstrap();
+</script>
+</body>
+</html>

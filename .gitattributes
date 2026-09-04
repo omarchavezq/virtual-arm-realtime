@@ -1,0 +1,11 @@
+# El servicio se despliega en Linux desde una máquina Windows: sin esto, git
+# convierte a CRLF al clonar y `install.sh` falla con «bash: \r: command not
+# found», y la unidad systemd no se parsea.
+* text=auto eol=lf
+*.sh text eol=lf
+*.service text eol=lf
+*.toml text eol=lf
+*.py text eol=lf
+*.html text eol=lf
+*.png binary
+*.tar.gz binary

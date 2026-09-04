@@ -1,0 +1,25 @@
+[project]
+name = "virtual-arm-realtime"
+version = "0.1.0"
+description = "Brazo virtual RTK directo: 2D inmediato y 3D con IMU opcional"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pyproj>=3.6",
+    "pyserial-asyncio>=0.6",
+    "smbus2>=0.4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "httpx>=0.27"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

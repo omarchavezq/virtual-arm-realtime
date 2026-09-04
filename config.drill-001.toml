@@ -1,0 +1,43 @@
+# Configuración mínima de drill-001. El brazo es candidato hasta validarlo
+# físicamente contra un punto topográfico distinto al de calibración.
+
+[gnss]
+port = "/dev/serial0"
+baudrate = 115200
+rate_hz = 10
+heading_offset_deg = 0.0
+
+[coordinates]
+projected_crs = "EPSG:32717"
+
+[lever]
+# Derivado provisionalmente de punto 6=ANT1, punto 7=ANT2 y punto 2=broca.
+forward_m = 2.270004
+left_m = 1.192078
+# No afecta Este/Norte cuando use_imu=false. Falta resolver 3.919 m topográfico
+# frente a ~4.8 m de cinta antes de habilitar la IMU.
+down_m = 3.919
+
+[calculation]
+use_imu = false
+
+[ntrip]
+host = "rtk.geodnet.com"
+port = 2101
+mountpoint = "AUTO"
+username = "RTKsub_ODRXQ"
+password_file = "/var/lib/virtual-rtk/secrets/ntrip.secret"
+gga_interval_s = 10
+
+[imu]
+bus = "/dev/i2c-1"
+address = 104
+sample_rate_hz = 100
+accel_range_g = 4
+gyro_range_dps = 500
+gyro_bias_dps = [-0.2047847694, 0.4379917199, 2.2545666762]
+accel_bias_g = [-0.0349598866, 0.0550002511, -0.0437921481]
+axis_mapping = [2, 1, 0]
+axis_signs = [-1, -1, -1]
+roll_offset_deg = 0.0
+
