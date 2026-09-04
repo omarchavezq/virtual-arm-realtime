@@ -234,13 +234,36 @@ def test_imu_actions_need_a_live_sensor(client) -> None:
     assert client.post("/api/imu/detect-axes").status_code == 409
 
 
-def test_imu_zero_makes_the_current_reading_the_new_zero(client, config_file) -> None:
-    client.runtime.imu.roll_raw_deg = 8.69
+def test_imu_zero_averages_the_window_and_makes_it_the_new_zero(client, config_file) -> None:
+    """Una muestra suelta grabaría la vibración del momento como offset fijo.
+
+    En drill-001 el acelerómetro dispersaba ±1° con el motor encendido: el cero
+    salió 1.4° corrido, que en la broca de la perforadora son 10 cm.
+    """
+    client.runtime.imu._raw_recent.extend([8.19] * 100 + [9.19] * 100)
     body = client.post("/api/imu/zero").json()
     assert body["imu"]["roll_offset_deg"] == pytest.approx(-8.69)
+    assert body["window"]["samples"] == 200
+    assert body["window"]["spread_deg"] == pytest.approx(0.5)
     from app.config import load_config as lc
 
     assert lc(config_file).imu.roll_offset_deg == pytest.approx(-8.69)
+
+
+def test_imu_zero_refuses_a_window_that_is_only_noise(client) -> None:
+    client.runtime.imu._raw_recent.extend(
+        [-6.0 if index % 2 else 6.0 for index in range(200)]
+    )
+    response = client.post("/api/imu/zero")
+    assert response.status_code == 409
+    assert "dispersa" in response.json()["detail"]
+
+
+def test_imu_zero_needs_enough_quiet_samples(client) -> None:
+    client.runtime.imu._raw_recent.extend([1.0] * 10)
+    response = client.post("/api/imu/zero")
+    assert response.status_code == 409
+    assert "faltan lecturas quietas" in response.json()["detail"]
 
 
 def test_imu_invert_toggles_and_persists(client, config_file) -> None:

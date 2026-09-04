@@ -24,6 +24,11 @@ _ORIENTATION_GRACE_S = 2.0
 # Ventana sobre la que se mide la dispersión del roll del acelerómetro.
 _NOISE_WINDOW_S = 1.0
 
+# Ventana que promedia «Poner roll a cero». Una sola muestra con la vibración
+# del motor encima se va grados, y ese error queda grabado en el archivo como
+# offset permanente. Se exige al menos un tercio de la ventana llena.
+_ZERO_WINDOW_S = 5.0
+
 # Tras este rato integrando sólo el giróscopo, la estimación ya arrastra deriva
 # de sesgo: al volver a haber gravedad limpia se vuelve a partir de ella en vez
 # de acercarse despacio. Con la máquina parada, el acelerómetro es la verdad.
@@ -81,6 +86,9 @@ class RollSensor:
         self._recent: deque[float] = deque(
             maxlen=max(2, int(config.sample_rate_hz * _NOISE_WINDOW_S))
         )
+        self._raw_recent: deque[float] = deque(
+            maxlen=max(2, int(config.sample_rate_hz * _ZERO_WINDOW_S))
+        )
         self._bad_orientation_since: float | None = None
         self._gated_since: float | None = None
         self._stop = threading.Event()
@@ -115,6 +123,7 @@ class RollSensor:
         self._gated_since = None
         self.rate_bias_dps = 0.0
         self._recent.clear()
+        self._raw_recent.clear()
 
     def _run(self) -> None:
         """Reintenta indefinidamente: un fallo I2C transitorio no puede dejar el
@@ -232,6 +241,8 @@ class RollSensor:
             )
 
         if not gated:
+            # Sin corregir: es lo que «Poner roll a cero» tiene que promediar.
+            self._raw_recent.append(self.roll_raw_deg)
             self._recent.append(roll_acc)
             if len(self._recent) >= 2:
                 self.roll_noise_deg = statistics.pstdev(self._recent)
@@ -239,6 +250,23 @@ class RollSensor:
         self.roll_estimate_deg = self._estimate
         self.received_ms = now * 1000.0
         self._publish()
+
+    @property
+    def zero_samples_required(self) -> int:
+        """Un tercio de la ventana llena: suficiente para promediar la vibración
+        sin obligar a esperar cinco segundos exactos con el dedo en el botón."""
+        return max(2, (self._raw_recent.maxlen or 2) // 3)
+
+    def raw_roll_window(self) -> tuple[float, float, int] | None:
+        """Promedio, dispersión y número de muestras del roll sin corregir.
+
+        Sólo entran muestras con gravedad limpia y máquina quieta, que son
+        las únicas que dicen algo del montaje del sensor.
+        """
+        if len(self._raw_recent) < 2:
+            return None
+        values = list(self._raw_recent)
+        return statistics.mean(values), statistics.pstdev(values), len(values)
 
     def _check_orientation(self, cosine: float, now: float) -> None:
         """¿Sostiene la gravedad el eje que el mapeo llama vertical?

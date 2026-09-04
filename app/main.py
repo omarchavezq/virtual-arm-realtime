@@ -216,18 +216,40 @@ async def imu_set_zero() -> dict:
     """Pone el roll a cero con la máquina nivelada.
 
     El operador nivela contra una referencia externa y pulsa: lo que lea el
-    sensor en ese momento es el desalineamiento del montaje.
+    sensor es el desalineamiento del montaje. Se promedia una ventana, no una
+    muestra: en drill-001 el acelerómetro dispersaba ±1° con el motor encendido
+    y una lectura suelta habría grabado grados de error como offset permanente.
     """
     async with config_write_lock:
-        raw = runtime.imu.roll_raw_deg
-        if raw is None:
+        window = runtime.imu.raw_roll_window()
+        if window is None:
             raise HTTPException(
                 status_code=409,
                 detail="La IMU no está entregando datos; no se puede poner a cero",
             )
+        average, spread, count = window
+        required = runtime.imu.zero_samples_required
+        if count < required:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"faltan lecturas quietas: {count}/{required}. Deje la máquina "
+                    "detenida unos segundos y repita"
+                ),
+            )
+        if spread > runtime.config.imu.max_roll_noise_deg:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"el roll dispersa ±{spread:.1f}° en la ventana: el cero saldría "
+                    "de ruido. Apague el motor o revise el montaje y repita"
+                ),
+            )
         current = runtime.config.imu
-        offset = raw if current.roll_invert else -raw
-        return await _save_imu(replace(current, roll_offset_deg=offset))
+        offset = average if current.roll_invert else -average
+        result = await _save_imu(replace(current, roll_offset_deg=offset))
+        result["window"] = {"average_deg": average, "spread_deg": spread, "samples": count}
+        return result
 
 
 @app.post("/api/imu/invert")
