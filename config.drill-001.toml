@@ -40,4 +40,12 @@ accel_bias_g = [-0.0349598866, 0.0550002511, -0.0437921481]
 axis_mapping = [2, 1, 0]
 axis_signs = [-1, -1, -1]
 roll_offset_deg = 0.0
+# Constante de tiempo del filtro. Subirla si el roll baila con el motor
+# encendido; bajarla sólo si la máquina se ladea más rápido de lo que sigue.
+filter_tau_s = 2.0
+# El roll se declara inservible si el eje vertical del mapeo se aparta más que
+# esto de la gravedad, o si dispersa más que max_roll_noise_deg con la máquina
+# detenida. Sin estos topes, un mapeo cruzado corre la broca en silencio.
+max_tilt_deg = 45.0
+max_roll_noise_deg = 2.0
 

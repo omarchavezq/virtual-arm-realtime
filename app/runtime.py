@@ -314,6 +314,14 @@ class Runtime:
         now = now_ms if now_ms is not None else time.monotonic() * 1000.0
         epoch_age = now - epoch.received_ms if epoch else None
         heading_age = now - heading.received_ms if heading else None
+        # El acelerómetro mide fuerza específica: en marcha, una frenada se lee
+        # como ladeo. La compuerta vive en el sensor, pero quien sabe si la
+        # máquina se mueve es el GNSS.
+        self.imu.moving = not (
+            epoch is not None
+            and epoch.speed_mps is not None
+            and epoch.speed_mps <= _STATIONARY_SPEED_MPS
+        )
         measured_roll = self.imu.roll_deg
         roll = measured_roll if self.config.use_imu else None
         imu_age = now - self.imu.received_ms if self.imu.received_ms else None
@@ -471,6 +479,14 @@ class Runtime:
                 "age_ms": int(imu_age) if imu_age is not None else None,
                 "roll_deg": measured_roll,
                 "roll_raw_deg": self.imu.roll_raw_deg,
+                "roll_estimate_deg": self.imu.roll_estimate_deg,
+                "roll_noise_deg": self.imu.roll_noise_deg,
+                "accel_magnitude_g": self.imu.accel_magnitude_g,
+                "tilt_from_vertical_deg": self.imu.tilt_from_vertical_deg,
+                "orientation_ok": self.imu.orientation_ok,
+                "accel_gated": self.imu.accel_gated,
+                "moving": self.imu.moving,
+                "filter_tau_s": self.config.imu.filter_tau_s,
                 "raw_g": list(self.imu.raw_g) if self.imu.raw_g else None,
                 "mapped_g": list(self.imu.mapped_g) if self.imu.mapped_g else None,
                 "axis_mapping": list(self.config.imu.axis_mapping),

@@ -89,6 +89,17 @@ class ImuConfig:
     # Invierte el signo del roll sin tocar el mapeo de ejes, como el botón
     # «invert roll» de AgOpenGPS: es la corrección que más se necesita en campo.
     roll_invert: bool = False
+    # Constante de tiempo del filtro complementario. Con los 0.24 s implícitos
+    # de antes, la vibración del motor pasaba casi entera al ángulo, y cada
+    # grado de roll son down_m·sin(1°) de broca: 6.8 cm con un brazo de 3.9 m.
+    filter_tau_s: float = 2.0
+    # Desvío máximo entre el eje que el mapeo llama vertical y la gravedad
+    # medida. Por encima, el mapeo está cruzado y el roll es inventado.
+    max_tilt_deg: float = 45.0
+    # Dispersión máxima del roll del acelerómetro con la máquina detenida. Un
+    # sensor sano se queda en décimas de grado; el que estaba mal mapeado daba
+    # más de 10°.
+    max_roll_noise_deg: float = 2.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,7 +173,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             "axis_signs",
             "roll_offset_deg",
         },
-        frozenset({"roll_invert"}),
+        frozenset(
+            {"roll_invert", "filter_tau_s", "max_tilt_deg", "max_roll_noise_deg"}
+        ),
     )
 
     config = AppConfig(
@@ -200,6 +213,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             axis_signs=_triple(i["axis_signs"], "axis_signs", int),
             roll_offset_deg=float(i["roll_offset_deg"]),
             roll_invert=bool(i.get("roll_invert", False)),
+            filter_tau_s=float(i.get("filter_tau_s", 2.0)),
+            max_tilt_deg=float(i.get("max_tilt_deg", 45.0)),
+            max_roll_noise_deg=float(i.get("max_roll_noise_deg", 2.0)),
         ),
     )
     if config.gnss.rate_hz < 5 or config.gnss.rate_hz > 20:
@@ -220,6 +236,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raise ValueError("axis_mapping debe ser una permutación de [0,1,2]")
     if any(v not in (-1, 1) for v in config.imu.axis_signs):
         raise ValueError("axis_signs sólo admite -1 o 1")
+    if config.imu.filter_tau_s <= 0:
+        raise ValueError("imu.filter_tau_s debe ser mayor que cero")
+    if not 0 < config.imu.max_tilt_deg <= 90:
+        raise ValueError("imu.max_tilt_deg debe estar entre 0 y 90")
+    if config.imu.max_roll_noise_deg <= 0:
+        raise ValueError("imu.max_roll_noise_deg debe ser mayor que cero")
     return config
 
 
@@ -268,6 +290,9 @@ axis_mapping = {list(config.imu.axis_mapping)}
 axis_signs = {list(config.imu.axis_signs)}
 roll_offset_deg = {config.imu.roll_offset_deg}
 roll_invert = {str(config.imu.roll_invert).lower()}
+filter_tau_s = {config.imu.filter_tau_s}
+max_tilt_deg = {config.imu.max_tilt_deg}
+max_roll_noise_deg = {config.imu.max_roll_noise_deg}
 """
     temporary = target.with_name(f".{target.name}.tmp")
     temporary.write_text(text, encoding="utf-8", newline="\n")

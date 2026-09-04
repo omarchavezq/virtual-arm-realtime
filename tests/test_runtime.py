@@ -450,3 +450,17 @@ def test_calibration_without_pitch_mode_keeps_the_planar_inverse() -> None:
     east, north = target_for(runtime, 2.27, 1.192)
     result = runtime.calibration_2d(east, north)
     assert result["forward_m"] == pytest.approx(2.27, abs=0.002)
+
+
+@pytest.mark.asyncio
+async def test_the_runtime_tells_the_imu_when_the_machine_moves() -> None:
+    """La compuerta vive en el sensor, pero quien sabe si hay movimiento es el GNSS."""
+    runtime = Runtime(config())
+    now = time.monotonic() * 1000
+    runtime.heading = heading_at(now)
+    runtime.epoch = epoch_at(now, speed=1.2)
+    await runtime.recompute(now)
+    assert runtime.imu.moving is True
+    runtime.epoch = epoch_at(now, speed=0.01)
+    await runtime.recompute(now)
+    assert runtime.imu.moving is False

@@ -394,9 +394,12 @@ function updateTelemetry(t){
   $('imuUse').textContent=imu.roll_used?'en uso para el cálculo':'no se usa en este modo';
   $('imuState').className=`ready ${imu.ok?(Math.abs(imu.roll_deg)<1?'ok':'bad'):'danger'}`;
   $('imuRoll').textContent=imu.ok?`roll ${imu.roll_deg.toFixed(2)}°`:'sin lectura';
+  const downCm=(loadedConfig?.lever?.down_m??0)*100;
+  const noise=Number.isFinite(imu.roll_noise_deg)?` · dispersión ±${imu.roll_noise_deg.toFixed(2)}°`:'';
+  const frozen=imu.accel_gated?' · en marcha: roll congelado, sólo giróscopo':'';
   $('imuText').textContent=imu.ok
-    ?(Math.abs(imu.roll_deg)<1?'Sensor respondiendo, máquina a nivel'
-      :`Máquina ladeada ${Math.abs(imu.roll_deg).toFixed(1)}° · ${(Math.abs(Math.sin(imu.roll_deg*Math.PI/180))*157.4).toFixed(0)} cm de error si no se corrige`)
+    ?(Math.abs(imu.roll_deg)<1?`Sensor respondiendo, máquina a nivel${noise}${frozen}`
+      :`Máquina ladeada ${Math.abs(imu.roll_deg).toFixed(1)}° · ${(Math.abs(Math.sin(imu.roll_deg*Math.PI/180))*downCm).toFixed(0)} cm de error si no se corrige${noise}${frozen}`)
     :(imu.error||'Sin respuesta del sensor');
   const g=imu.raw_g;
   $('axX').value=g?g[0].toFixed(3)+' g':'—';

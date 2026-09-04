@@ -25,6 +25,13 @@ Servicio mínimo para calcular la posición de la broca en cada dato recibido de
 - En modo 2D el servicio publica el error horizontal que descarta por el pitch
   del UM982 (`attitude.tilt_error_m`) y avisa a partir de 5 cm. Es una cota
   inferior: el roll sin IMU es desconocido.
+- El roll no se publica si no se puede sostener: si el eje que el mapeo llama
+  vertical no es el que aguanta la gravedad (`max_tilt_deg`), o si dispersa más
+  de `max_roll_noise_deg` con la máquina detenida, `roll_deg` queda en nulo y en
+  3D no hay posición. Un roll equivocado no se ve en pantalla —mueve la broca en
+  silencio— y `down_m·sin(roll)` convierte cada grado en centímetros.
+- Con la máquina en marcha sólo se integra el giróscopo. El acelerómetro mide
+  fuerza específica: una frenada o un bamboleo se leerían como ladeo.
 
 La interfaz usa únicamente:
 
