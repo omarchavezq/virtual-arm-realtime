@@ -35,6 +35,9 @@ address = 104
 sample_rate_hz = 100
 accel_range_g = 4
 gyro_range_dps = 500
+# El sesgo del eje de balanceo se vuelve a aprender solo, contra el
+# acelerómetro: este valor sólo sirve de punto de partida y queda obsoleto en
+# cuanto cambie el mapeo de ejes, porque está medido en el sistema ya mapeado.
 gyro_bias_dps = [-0.2047847694, 0.4379917199, 2.2545666762]
 accel_bias_g = [-0.0349598866, 0.0550002511, -0.0437921481]
 axis_mapping = [2, 1, 0]

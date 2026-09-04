@@ -63,16 +63,27 @@ def test_a_healthy_sensor_tracks_the_real_tilt() -> None:
     assert imu.roll_noise_deg == pytest.approx(0.0, abs=1e-9)
 
 
-def test_the_filter_takes_its_time_constant_to_follow_a_step() -> None:
-    """Con tau = 2 s, un escalón de 10° recorre el 63% en 2 s.
+def test_the_filter_does_not_chase_a_fast_wobble() -> None:
+    """Con tau = 2 s, dos décimas de sacudida mueven el ángulo un 10%.
 
-    Los 0.24 s implícitos de antes dejaban pasar la vibración del motor casi
-    entera, y cada grado son 6.8 cm de broca con un brazo de 3.9 m.
+    Los 0.24 s implícitos de antes la habrían seguido casi entera, y cada grado
+    son 6.8 cm de broca con un brazo de 3.9 m.
     """
     imu = sensor(filter_tau_s=2.0)
     now = feed(imu, gravity(0.0), seconds=10.0)
-    feed(imu, gravity(10.0), seconds=2.0, start=now)
-    assert imu.roll_estimate_deg == pytest.approx(10.0 * (1 - math.exp(-1)), abs=0.3)
+    feed(imu, gravity(10.0), seconds=0.2, start=now)
+    assert imu.roll_estimate_deg < 1.5
+
+
+def test_the_filter_still_follows_a_sustained_tilt() -> None:
+    """No es un exponencial puro: el estimador de sesgo lo hace de segundo orden
+    y sobrepasa un 6% antes de asentarse."""
+    imu = sensor(filter_tau_s=2.0)
+    now = feed(imu, gravity(0.0), seconds=10.0)
+    now = feed(imu, gravity(10.0), seconds=2.0, start=now)
+    assert imu.roll_estimate_deg == pytest.approx(6.5, abs=1.0)
+    feed(imu, gravity(10.0), seconds=60.0, start=now)
+    assert imu.roll_estimate_deg == pytest.approx(10.0, abs=0.3)
 
 
 # -------------------------------------------------- compuerta por movimiento
@@ -191,3 +202,35 @@ def test_the_roll_snaps_back_to_the_accelerometer_after_a_long_drive() -> None:
     now += 0.01
     imu.update(gravity(0.0), (0.0, 0.0, 0.0), 0.01, now)
     assert imu.roll_estimate_deg == pytest.approx(0.0, abs=0.01)
+
+
+# --------------------------------------------- sesgo aprendido del giróscopo
+
+
+def test_a_gyroscope_bias_does_not_leave_a_permanent_offset() -> None:
+    """Un filtro complementario arrastra tau·sesgo de desvío permanente.
+
+    Con tau = 2 s y 2 °/s mal restados son 4°, que en la broca de la perforadora
+    son 27 cm. El sesgo se aprende de lo que el acelerómetro desmiente.
+    """
+    imu = sensor()
+    feed(imu, gravity(0.0), seconds=240.0, gyro=(2.0, 0.0, 0.0))
+    assert imu.rate_bias_dps == pytest.approx(2.0, abs=0.1)
+    assert imu.roll_deg == pytest.approx(0.0, abs=0.2)
+
+
+def test_the_learned_bias_also_holds_the_roll_while_the_machine_moves() -> None:
+    """Es con la compuerta cerrada donde la deriva no tiene quién la corrija."""
+    imu = sensor()
+    now = feed(imu, gravity(0.0), seconds=240.0, gyro=(2.0, 0.0, 0.0))
+    imu.moving = True
+    feed(imu, gravity(0.0), seconds=20.0, gyro=(2.0, 0.0, 0.0), start=now)
+    assert imu.roll_estimate_deg == pytest.approx(0.0, abs=1.0)
+
+
+def test_a_real_tilt_is_not_swallowed_by_the_bias_estimator() -> None:
+    """El sesgo se aprende despacio; una máquina que se ladea no lo es."""
+    imu = sensor()
+    now = feed(imu, gravity(0.0), seconds=60.0)
+    feed(imu, gravity(8.0), seconds=30.0, start=now)
+    assert imu.roll_deg == pytest.approx(8.0, abs=0.3)

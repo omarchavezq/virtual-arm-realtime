@@ -29,6 +29,15 @@ _NOISE_WINDOW_S = 1.0
 # de acercarse despacio. Con la máquina parada, el acelerómetro es la verdad.
 _RESNAP_AFTER_GATED_S = 1.0
 
+# El sesgo del giróscopo se aprende de lo que el acelerómetro contradice, en vez
+# de confiar en `gyro_bias_dps` del archivo. Ese número se mide en el sistema ya
+# mapeado, así que cualquier cambio de ejes —«Detectar ejes», sin ir más lejos—
+# lo deja aplicado al eje equivocado. Y el error no es inocuo: un filtro
+# complementario con constante de tiempo tau arrastra un desvío permanente de
+# tau·sesgo, o sea 4° con 2 s y 2 °/s mal restados.
+_BIAS_GAIN = 0.02
+_MAX_RATE_BIAS_DPS = 10.0
+
 
 def _signed(high: int, low: int) -> int:
     value = (high << 8) | low
@@ -62,6 +71,9 @@ class RollSensor:
         self.tilt_from_vertical_deg: float | None = None
         self.orientation_ok = True
         self.accel_gated = False
+        # Sesgo del eje de balanceo, aprendido en marcha. Se publica porque un
+        # valor que no para de crecer delata un sensor o un mapeo malos.
+        self.rate_bias_dps = 0.0
         # Lo escribe el Runtime en cada época. Con la máquina en marcha el
         # acelerómetro mide fuerza específica: una frenada se lee como ladeo.
         self.moving = False
@@ -101,6 +113,7 @@ class RollSensor:
         self._estimate = None
         self._bad_orientation_since = None
         self._gated_since = None
+        self.rate_bias_dps = 0.0
         self._recent.clear()
 
     def _run(self) -> None:
@@ -190,6 +203,10 @@ class RollSensor:
         else:
             self._gated_since = None
 
+        # El sesgo aprendido se descuenta siempre, también con la compuerta
+        # cerrada: es ahí donde la deriva no tiene quién la corrija.
+        rate = gyro[0] - self.rate_bias_dps
+
         if self._estimate is None:
             # Hay que partir de algún lado, y el giróscopo solo no sabe dónde
             # está el suelo. Sin una lectura limpia no se arranca.
@@ -198,14 +215,21 @@ class RollSensor:
                 return
             self._estimate = roll_acc
         elif gated:
-            self._estimate += gyro[0] * dt
+            self._estimate += rate * dt
         elif drifted:
             self._estimate = roll_acc
             self._recent.clear()
             self.roll_noise_deg = None
         else:
+            predicted = self._estimate + rate * dt
             alpha = self.config.filter_tau_s / (self.config.filter_tau_s + dt)
-            self._estimate = alpha * (self._estimate + gyro[0] * dt) + (1.0 - alpha) * roll_acc
+            self._estimate = alpha * predicted + (1.0 - alpha) * roll_acc
+            # Lo que el acelerómetro desmiente de forma sostenida es sesgo del
+            # giróscopo. Corregirlo aquí es lo que evita el desvío permanente.
+            self.rate_bias_dps = max(
+                -_MAX_RATE_BIAS_DPS,
+                min(_MAX_RATE_BIAS_DPS, self.rate_bias_dps - _BIAS_GAIN * (roll_acc - predicted) * dt),
+            )
 
         if not gated:
             self._recent.append(roll_acc)

@@ -485,6 +485,7 @@ class Runtime:
                 "tilt_from_vertical_deg": self.imu.tilt_from_vertical_deg,
                 "orientation_ok": self.imu.orientation_ok,
                 "accel_gated": self.imu.accel_gated,
+                "rate_bias_dps": self.imu.rate_bias_dps,
                 "moving": self.imu.moving,
                 "filter_tau_s": self.config.imu.filter_tau_s,
                 "raw_g": list(self.imu.raw_g) if self.imu.raw_g else None,
