@@ -25,12 +25,6 @@ _ACCEL_CONFIG_2 = 0x1D
 _ACCEL_DLPF_41HZ = 0x03
 _SEPARATE_ACCEL_FILTER = frozenset({0x70, 0x71, 0x73})
 
-
-def _chip_name(who_am_i: int | None) -> str:
-    if who_am_i is None:
-        return ""
-    return _CHIP_NAMES.get(who_am_i, f"desconocido (0x{who_am_i:02X})")
-
 # Fuera de esta banda el acelerómetro no está midiendo sólo gravedad: la máquina
 # acelera, frena o vibra fuerte. El ángulo que saldría no sería inclinación.
 _MIN_ACCEL_G = 0.85
@@ -40,12 +34,12 @@ _MAX_ACCEL_G = 1.15
 # servicio sin roll, pero un mapeo cruzado no se arregla solo.
 _ORIENTATION_GRACE_S = 2.0
 
-# Ventana sobre la que se mide la dispersión del roll del acelerómetro.
+# Ventana sobre la que se mide la dispersión del ángulo del acelerómetro.
 _NOISE_WINDOW_S = 1.0
 
-# Ventana que promedia «Poner roll a cero». Una sola muestra con la vibración
-# del motor encima se va grados, y ese error queda grabado en el archivo como
-# offset permanente. Se exige al menos un tercio de la ventana llena.
+# Ventana que promedia «Poner a cero». Una sola muestra con la vibración del
+# motor encima se va grados, y ese error queda grabado en el archivo como offset
+# permanente. Se exige al menos un tercio de la ventana llena.
 _ZERO_WINDOW_S = 5.0
 
 # Tras este rato integrando sólo el giróscopo, la estimación ya arrastra deriva
@@ -68,32 +62,146 @@ def _signed(high: int, low: int) -> int:
     return value - 65536 if value >= 32768 else value
 
 
+def _chip_name(who_am_i: int | None) -> str:
+    if who_am_i is None:
+        return ""
+    return _CHIP_NAMES.get(who_am_i, f"desconocido (0x{who_am_i:02X})")
+
+
+class _AxisFilter:
+    """Filtro complementario de un eje: acelerómetro contra giróscopo.
+
+    Vive aparte porque cabeceo y balanceo necesitan exactamente el mismo
+    tratamiento, y duplicarlo sería duplicar también el estimador de sesgo, que
+    es la parte delicada.
+    """
+
+    def __init__(self, tau_s: float, sample_rate_hz: int) -> None:
+        self.tau_s = tau_s
+        self.estimate: float | None = None
+        self.bias_dps = 0.0
+        self.noise_deg: float | None = None
+        self.recent: deque[float] = deque(
+            maxlen=max(2, int(sample_rate_hz * _NOISE_WINDOW_S))
+        )
+        self.raw_recent: deque[float] = deque(
+            maxlen=max(2, int(sample_rate_hz * _ZERO_WINDOW_S))
+        )
+        self._gated_since: float | None = None
+
+    def reset(self) -> None:
+        self.estimate = None
+        self.bias_dps = 0.0
+        self.noise_deg = None
+        self.recent.clear()
+        self.raw_recent.clear()
+        self._gated_since = None
+
+    @property
+    def zero_samples_required(self) -> int:
+        """Un tercio de la ventana llena: suficiente para promediar la vibración
+        sin obligar a esperar cinco segundos exactos con el dedo en el botón."""
+        return max(2, (self.raw_recent.maxlen or 2) // 3)
+
+    def window(self) -> tuple[float, float, int] | None:
+        """Promedio, dispersión y número de muestras del ángulo sin corregir.
+
+        Sólo entran muestras con gravedad limpia y máquina quieta, que son las
+        únicas que dicen algo del montaje del sensor.
+        """
+        if len(self.raw_recent) < 2:
+            return None
+        values = list(self.raw_recent)
+        return statistics.mean(values), statistics.pstdev(values), len(values)
+
+    def update(
+        self,
+        corrected_deg: float,
+        raw_deg: float,
+        rate_dps: float,
+        dt: float,
+        now: float,
+        *,
+        gated: bool,
+        plausible: bool,
+    ) -> None:
+        drifted = (
+            self._gated_since is not None and now - self._gated_since >= _RESNAP_AFTER_GATED_S
+        )
+        if gated:
+            if self._gated_since is None:
+                self._gated_since = now
+        else:
+            self._gated_since = None
+
+        # El sesgo aprendido se descuenta siempre, también con la compuerta
+        # cerrada: es ahí donde la deriva no tiene quién la corrija.
+        rate = rate_dps - self.bias_dps
+
+        if self.estimate is None:
+            # Hay que partir de algún lado, y el giróscopo solo no sabe dónde
+            # está el suelo. Sin una lectura limpia no se arranca.
+            if not plausible:
+                return
+            self.estimate = corrected_deg
+        elif gated:
+            self.estimate += rate * dt
+        elif drifted:
+            self.estimate = corrected_deg
+            self.recent.clear()
+            self.noise_deg = None
+        else:
+            predicted = self.estimate + rate * dt
+            alpha = self.tau_s / (self.tau_s + dt)
+            self.estimate = alpha * predicted + (1.0 - alpha) * corrected_deg
+            # Lo que el acelerómetro desmiente de forma sostenida es sesgo del
+            # giróscopo. Corregirlo aquí es lo que evita el desvío permanente.
+            self.bias_dps = max(
+                -_MAX_RATE_BIAS_DPS,
+                min(
+                    _MAX_RATE_BIAS_DPS,
+                    self.bias_dps - _BIAS_GAIN * (corrected_deg - predicted) * dt,
+                ),
+            )
+
+        if not gated:
+            # Sin corregir: es lo que «Poner a cero» tiene que promediar.
+            self.raw_recent.append(raw_deg)
+            self.recent.append(corrected_deg)
+            if len(self.recent) >= 2:
+                self.noise_deg = statistics.pstdev(self.recent)
+
+
 class RollSensor:
-    """Roll del acelerómetro, con compuerta por movimiento y plausibilidad.
+    """Actitud del acelerómetro, con compuerta por movimiento y plausibilidad.
 
     Sirve para la familia MPU6050 / 6500 / 9250 (el chip del GY-91): comparten
     el mapa de registros de acelerómetro y giróscopo.
 
-    Un roll equivocado no se nota: corre la broca en silencio y la pantalla
+    Publica balanceo y cabeceo. El cabeceo existe porque el del UM982, medido
+    sobre una línea base de dos metros, vagabundea 1.8° con la máquina inmóvil
+    —siete veces más que este acelerómetro— y eso son 12 cm de broca con un
+    brazo de 3.9 m.
+
+    Un ángulo equivocado no se nota: corre la broca en silencio y la pantalla
     sigue diciendo PRECISION. Por eso el sensor calla —`roll_deg = None`, que
-    invalida la posición en 3D— en vez de publicar un número que no puede
-    sostener.
+    invalida la posición en 3D— en vez de publicar un número que no sostiene.
     """
 
     def __init__(self, config: ImuConfig) -> None:
         self.config = config
-        # Valor de fiar, el único que entra en el cálculo. None = no publicable.
+        # Valores de fiar, los únicos que entran en el cálculo. None = no
+        # publicable.
         self.roll_deg: float | None = None
+        self.pitch_deg: float | None = None
         self.received_ms: float | None = None
         self.error = ""
         # Diagnóstico: lo que ve el sensor antes y después del mapeo de ejes, y
-        # el roll sin corregir. Sin esto no hay forma de calibrarlo en campo.
+        # los ángulos sin corregir. Sin esto no hay forma de calibrarlo en campo.
         self.raw_g: tuple[float, float, float] | None = None
         self.mapped_g: tuple[float, float, float] | None = None
         self.roll_raw_deg: float | None = None
-        # Salida del filtro se pueda publicar o no: sirve para ver por qué no.
-        self.roll_estimate_deg: float | None = None
-        self.roll_noise_deg: float | None = None
+        self.pitch_raw_deg: float | None = None
         self.accel_magnitude_g: float | None = None
         self.tilt_from_vertical_deg: float | None = None
         self.orientation_ok = True
@@ -102,23 +210,52 @@ class RollSensor:
         # de los ejes y las taras: verlo publicado evita calibrar a ciegas.
         self.chip_id: int | None = None
         self.chip_name = ""
-        # Sesgo del eje de balanceo, aprendido en marcha. Se publica porque un
-        # valor que no para de crecer delata un sensor o un mapeo malos.
-        self.rate_bias_dps = 0.0
         # Lo escribe el Runtime en cada época. Con la máquina en marcha el
         # acelerómetro mide fuerza específica: una frenada se lee como ladeo.
         self.moving = False
-        self._estimate: float | None = None
-        self._recent: deque[float] = deque(
-            maxlen=max(2, int(config.sample_rate_hz * _NOISE_WINDOW_S))
-        )
-        self._raw_recent: deque[float] = deque(
-            maxlen=max(2, int(config.sample_rate_hz * _ZERO_WINDOW_S))
-        )
+        self._roll = _AxisFilter(config.filter_tau_s, config.sample_rate_hz)
+        self._pitch = _AxisFilter(config.filter_tau_s, config.sample_rate_hz)
         self._bad_orientation_since: float | None = None
-        self._gated_since: float | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+
+    # ------------------------------------------------------- diagnóstico
+
+    @property
+    def roll_estimate_deg(self) -> float | None:
+        return self._roll.estimate
+
+    @property
+    def pitch_estimate_deg(self) -> float | None:
+        return self._pitch.estimate
+
+    @property
+    def roll_noise_deg(self) -> float | None:
+        return self._roll.noise_deg
+
+    @property
+    def pitch_noise_deg(self) -> float | None:
+        return self._pitch.noise_deg
+
+    @property
+    def rate_bias_dps(self) -> float:
+        return self._roll.bias_dps
+
+    @property
+    def pitch_rate_bias_dps(self) -> float:
+        return self._pitch.bias_dps
+
+    @property
+    def zero_samples_required(self) -> int:
+        return self._roll.zero_samples_required
+
+    def raw_roll_window(self) -> tuple[float, float, int] | None:
+        return self._roll.window()
+
+    def raw_pitch_window(self) -> tuple[float, float, int] | None:
+        return self._pitch.window()
+
+    # ------------------------------------------------------------ hilo
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -139,17 +276,14 @@ class RollSensor:
         )  # type: ignore[return-value]
 
     def _clear(self) -> None:
-        self.roll_deg = None
+        self.roll_deg = self.pitch_deg = None
         self.received_ms = None
-        self.raw_g = self.mapped_g = self.roll_raw_deg = None
-        self.roll_estimate_deg = self.roll_noise_deg = None
+        self.raw_g = self.mapped_g = None
+        self.roll_raw_deg = self.pitch_raw_deg = None
         self.accel_magnitude_g = self.tilt_from_vertical_deg = None
-        self._estimate = None
         self._bad_orientation_since = None
-        self._gated_since = None
-        self.rate_bias_dps = 0.0
-        self._recent.clear()
-        self._raw_recent.clear()
+        self._roll.reset()
+        self._pitch.reset()
 
     def _run(self) -> None:
         """Reintenta indefinidamente: un fallo I2C transitorio no puede dejar el
@@ -219,11 +353,18 @@ class RollSensor:
         # Sólo con ~1 g limpio el vector apunta a donde apunta la gravedad.
         plausible = _MIN_ACCEL_G <= magnitude <= _MAX_ACCEL_G
 
-        roll_acc = math.degrees(math.atan2(accel[1], accel[2]))
-        self.roll_raw_deg = roll_acc
-        if self.config.roll_invert:
-            roll_acc = -roll_acc
+        # Sistema del cuerpo: x adelante, y izquierda, z arriba. En reposo y a
+        # nivel el acelerómetro mide +1 g en z. Balanceo positivo = costado
+        # derecho abajo; cabeceo positivo = morro arriba, la misma convención
+        # que el pitch del UM982.
+        roll_raw = math.degrees(math.atan2(accel[1], accel[2]))
+        pitch_raw = math.degrees(math.atan2(accel[0], math.hypot(accel[1], accel[2])))
+        self.roll_raw_deg = roll_raw
+        self.pitch_raw_deg = pitch_raw
+
+        roll_acc = -roll_raw if self.config.roll_invert else roll_raw
         roll_acc += self.config.roll_offset_deg
+        pitch_acc = pitch_raw + self.config.pitch_offset_deg
 
         if plausible:
             self._check_orientation(accel[2] / magnitude, now)
@@ -233,70 +374,19 @@ class RollSensor:
         gated = self.moving or not plausible
         self.accel_gated = gated
 
-        drifted = (
-            self._gated_since is not None and now - self._gated_since >= _RESNAP_AFTER_GATED_S
+        # Regla de la mano derecha sobre los ejes del cuerpo: girar sobre
+        # +adelante levanta el costado izquierdo, o sea balanceo positivo; girar
+        # sobre +izquierda hunde el morro, así que el cabeceo lleva signo menos.
+        self._roll.update(roll_acc, roll_raw, gyro[0], dt, now, gated=gated, plausible=plausible)
+        self._pitch.update(
+            pitch_acc, pitch_raw, -gyro[1], dt, now, gated=gated, plausible=plausible
         )
-        if gated:
-            if self._gated_since is None:
-                self._gated_since = now
-        else:
-            self._gated_since = None
 
-        # El sesgo aprendido se descuenta siempre, también con la compuerta
-        # cerrada: es ahí donde la deriva no tiene quién la corrija.
-        rate = gyro[0] - self.rate_bias_dps
-
-        if self._estimate is None:
-            # Hay que partir de algún lado, y el giróscopo solo no sabe dónde
-            # está el suelo. Sin una lectura limpia no se arranca.
-            if not plausible:
-                self.roll_deg = None
-                return
-            self._estimate = roll_acc
-        elif gated:
-            self._estimate += rate * dt
-        elif drifted:
-            self._estimate = roll_acc
-            self._recent.clear()
-            self.roll_noise_deg = None
-        else:
-            predicted = self._estimate + rate * dt
-            alpha = self.config.filter_tau_s / (self.config.filter_tau_s + dt)
-            self._estimate = alpha * predicted + (1.0 - alpha) * roll_acc
-            # Lo que el acelerómetro desmiente de forma sostenida es sesgo del
-            # giróscopo. Corregirlo aquí es lo que evita el desvío permanente.
-            self.rate_bias_dps = max(
-                -_MAX_RATE_BIAS_DPS,
-                min(_MAX_RATE_BIAS_DPS, self.rate_bias_dps - _BIAS_GAIN * (roll_acc - predicted) * dt),
-            )
-
-        if not gated:
-            # Sin corregir: es lo que «Poner roll a cero» tiene que promediar.
-            self._raw_recent.append(self.roll_raw_deg)
-            self._recent.append(roll_acc)
-            if len(self._recent) >= 2:
-                self.roll_noise_deg = statistics.pstdev(self._recent)
-
-        self.roll_estimate_deg = self._estimate
+        if self._roll.estimate is None:
+            self.roll_deg = self.pitch_deg = None
+            return
         self.received_ms = now * 1000.0
         self._publish()
-
-    @property
-    def zero_samples_required(self) -> int:
-        """Un tercio de la ventana llena: suficiente para promediar la vibración
-        sin obligar a esperar cinco segundos exactos con el dedo en el botón."""
-        return max(2, (self._raw_recent.maxlen or 2) // 3)
-
-    def raw_roll_window(self) -> tuple[float, float, int] | None:
-        """Promedio, dispersión y número de muestras del roll sin corregir.
-
-        Sólo entran muestras con gravedad limpia y máquina quieta, que son
-        las únicas que dicen algo del montaje del sensor.
-        """
-        if len(self._raw_recent) < 2:
-            return None
-        values = list(self._raw_recent)
-        return statistics.mean(values), statistics.pstdev(values), len(values)
 
     def _check_orientation(self, cosine: float, now: float) -> None:
         """¿Sostiene la gravedad el eje que el mapeo llama vertical?
@@ -319,22 +409,30 @@ class RollSensor:
             self.orientation_ok = False
 
     def _publish(self) -> None:
-        """Decide si el valor del filtro se puede usar para mover la broca."""
+        """Decide si los valores del filtro se pueden usar para mover la broca."""
         if not self.orientation_ok:
-            self.roll_deg = None
+            self.roll_deg = self.pitch_deg = None
             self.error = (
                 f"El eje vertical del mapeo no sostiene la gravedad: "
                 f"{self.tilt_from_vertical_deg:.0f}° de desvío. Nivele la máquina "
                 "y pulse «Detectar ejes»"
             )
             return
-        noise = self.roll_noise_deg
-        if not self.moving and noise is not None and noise > self.config.max_roll_noise_deg:
-            self.roll_deg = None
+        limit = self.config.max_roll_noise_deg
+        unstable = [
+            name
+            for name, axis in (("balanceo", self._roll), ("cabeceo", self._pitch))
+            if not self.moving and axis.noise_deg is not None and axis.noise_deg > limit
+        ]
+        self.roll_deg = None if "balanceo" in unstable else self._roll.estimate
+        self.pitch_deg = None if "cabeceo" in unstable else self._pitch.estimate
+        if unstable:
+            peor = max(
+                (self._roll.noise_deg or 0.0, self._pitch.noise_deg or 0.0),
+            )
             self.error = (
-                f"Roll inestable: ±{noise:.1f}° con la máquina detenida. Revise el "
-                "montaje del sensor y el mapeo de ejes"
+                f"{' y '.join(unstable).capitalize()} inestable: ±{peor:.1f}° con la "
+                "máquina detenida. Revise el montaje del sensor y el mapeo de ejes"
             )
             return
         self.error = ""
-        self.roll_deg = self._estimate

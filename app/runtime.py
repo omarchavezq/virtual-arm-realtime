@@ -175,11 +175,26 @@ class Runtime:
         lever = self.config.lever
         if self.config.use_imu:
             return rotate_lever(lever.forward_m, lever.left_m, lever.down_m,
-                                heading.heading_deg, heading.pitch_deg, roll or 0.0, True)
+                                heading.heading_deg, self._pitch_deg(heading),
+                                roll or 0.0, True)
         if self.config.use_pitch:
             return rotate_lever(lever.forward_m, lever.left_m, lever.down_m,
                                 heading.heading_deg, heading.pitch_deg, 0.0, True)
         return rotate_lever(lever.forward_m, lever.left_m, lever.down_m, heading.heading_deg)
+
+    def _pitch_deg(self, heading: Heading) -> float:
+        """Cabeceo que entra en el cálculo, del UM982 o del acelerómetro.
+
+        El del UM982 sale de la componente vertical de una línea base de dos
+        metros: en drill-001, con la estructura inmóvil, vagabundeaba 1.85°
+        contra los 0.70° del acelerómetro. Son 12 cm de broca con un brazo de
+        3.9 m, y por eso se puede elegir de dónde tomarlo.
+        """
+        if self.config.use_imu and self.config.use_imu_pitch:
+            measured = self.imu.pitch_deg
+            if measured is not None:
+                return measured
+        return heading.pitch_deg
 
     # ----------------------------------------------------------- calibración
 
@@ -358,7 +373,10 @@ class Runtime:
             else:
                 reason = "Posición o rumbo inválido o antiguo"
         elif self.config.use_imu and (
-            roll is None or imu_age is None or imu_age > _MAX_IMU_AGE_MS
+            roll is None
+            or imu_age is None
+            or imu_age > _MAX_IMU_AGE_MS
+            or (self.config.use_imu_pitch and self.imu.pitch_deg is None)
         ):
             valid = False
             reason = (
@@ -456,7 +474,11 @@ class Runtime:
             },
             "attitude": {
                 "heading_deg": heading.heading_deg if heading else None,
-                "pitch_deg": heading.pitch_deg if heading else None,
+                "pitch_deg": self._pitch_deg(heading) if heading else None,
+                "pitch_gnss_deg": heading.pitch_deg if heading else None,
+                "pitch_source": "IMU"
+                if (self.config.use_imu and self.config.use_imu_pitch)
+                else "GNSS",
                 "roll_deg": roll,
                 "heading_valid": bool(heading and heading.valid),
                 "tilt_valid": not self.config.use_imu or roll is not None,
@@ -480,6 +502,12 @@ class Runtime:
                 "age_ms": int(imu_age) if imu_age is not None else None,
                 "roll_deg": measured_roll,
                 "roll_raw_deg": self.imu.roll_raw_deg,
+                "pitch_deg": self.imu.pitch_deg,
+                "pitch_raw_deg": self.imu.pitch_raw_deg,
+                "pitch_noise_deg": self.imu.pitch_noise_deg,
+                "pitch_rate_bias_dps": self.imu.pitch_rate_bias_dps,
+                "pitch_offset_deg": self.config.imu.pitch_offset_deg,
+                "pitch_used": self.config.use_imu and self.config.use_imu_pitch,
                 "roll_estimate_deg": self.imu.roll_estimate_deg,
                 "roll_noise_deg": self.imu.roll_noise_deg,
                 "accel_magnitude_g": self.imu.accel_magnitude_g,

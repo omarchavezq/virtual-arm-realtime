@@ -129,7 +129,7 @@
     <div class="step-title"><span class="step">2</span><h2>Definir cómo se calculará la broca</h2></div>
     <div class="grid">
       <label>Sistema de coordenadas del topógrafo<input id="crs" required aria-describedby="crsHelp" placeholder="EPSG:32717"></label>
-      <label>Modelo de cálculo<select id="useImu"><option value="2d">2D directo · máquina nivelada</option><option value="pitch">2D + inclinación del GPS · sin IMU</option><option value="3d">3D · usa IMU e inclinación</option></select></label>
+      <label>Modelo de cálculo<select id="useImu"><option value="2d">2D directo · máquina nivelada</option><option value="pitch">2D + inclinación del GPS · sin IMU</option><option value="3d">3D · usa IMU e inclinación</option><option value="3d-imu">3D · toda la actitud de la IMU</option></select></label>
     </div>
     <p id="crsHelp" class="note">Debe ser una proyección en metros, exactamente la misma que usa el topógrafo en sus puntos. Ejemplo: EPSG:32717.</p>
     <div id="modeHelp" class="banner ok" style="margin-top:10px;margin-bottom:0">Recomendado para estas pruebas: calcula Este/Norte sin depender de la IMU. Exige nivelar la máquina antes de perforar.</div>
@@ -217,7 +217,7 @@ function renderConfig(c){
   $('host').value=c.ntrip.host;$('port').value=c.ntrip.port;$('mountpoint').value=c.ntrip.mountpoint;
   $('username').value=c.ntrip.username;$('password').value='';
   $('password').placeholder=c.ntrip.has_password?'Guardada · dejar vacío para conservar':'Ingrese la contraseña';
-  $('crs').value=c.coordinates.projected_crs;$('useImu').value=c.calculation.use_imu?'3d':(c.calculation.use_pitch?'pitch':'2d');
+  $('crs').value=c.coordinates.projected_crs;$('useImu').value=c.calculation.use_imu?(c.calculation.use_imu_pitch?'3d-imu':'3d'):(c.calculation.use_pitch?'pitch':'2d');
   $('forward').value=c.lever.forward_m;$('left').value=c.lever.left_m;$('down').value=c.lever.down_m;
   updateModeHelp();
 }
@@ -267,13 +267,15 @@ $('modelForm').addEventListener('submit',async e=>{
   const p=basePayload();
   p.coordinates.projected_crs=$('crs').value.trim();
   const sel=$('useImu').value;
-  p.calculation.use_imu=sel==='3d';
+  p.calculation.use_imu=sel==='3d'||sel==='3d-imu';
   p.calculation.use_pitch=sel==='pitch';
+  p.calculation.use_imu_pitch=sel==='3d-imu';
   const cambia=p.calculation.use_imu!==loadedConfig.calculation.use_imu||
-               p.calculation.use_pitch!==loadedConfig.calculation.use_pitch;
+               p.calculation.use_pitch!==loadedConfig.calculation.use_pitch||
+               p.calculation.use_imu_pitch!==loadedConfig.calculation.use_imu_pitch;
   if(cambia&&!confirm('Cambiar el modelo puede desplazar la broca virtual. ¿Aplicar?')){
     // Sin esto el desplegable se queda mostrando un modo que no está activo.
-    $('useImu').value=loadedConfig.calculation.use_imu?'3d':(loadedConfig.calculation.use_pitch?'pitch':'2d');
+    $('useImu').value=loadedConfig.calculation.use_imu?(loadedConfig.calculation.use_imu_pitch?'3d-imu':'3d'):(loadedConfig.calculation.use_pitch?'pitch':'2d');
     updateModeHelp();
     showMessage($('modelMessage'),'Cambio cancelado. Sigue activo el modelo anterior.',true);
     return;
@@ -287,9 +289,11 @@ $('modelForm').addEventListener('submit',async e=>{
 });
 
 function updateModeHelp(){
-  const sel=$('useImu').value, is3d=sel==='3d', isPitch=sel==='pitch';
+  const sel=$('useImu').value, isImuPitch=sel==='3d-imu', is3d=sel==='3d'||isImuPitch, isPitch=sel==='pitch';
   $('modeHelp').className=`banner ${is3d?'':'ok'}`;
-  $('modeHelp').textContent=is3d
+  $('modeHelp').textContent=isImuPitch
+    ?'Cabeceo y balanceo salen del acelerómetro; al GPS le queda sólo el rumbo. Exige el cero de la IMU hecho y verificado contra el pitch del UM982.'
+    :is3d
     ?'3D requiere IMU operativa y altura ANT1–broca confirmada. Sólo es fiable con la máquina detenida.'
     :isPitch
     ?'Recomendado. Corrige la inclinación con el dato de las dos antenas del GPS, sin usar la IMU. Queda sin corregir el balanceo lateral.'
@@ -394,7 +398,8 @@ function updateTelemetry(t){
   $('imuChip').textContent=imu.chip||'sin identificar';
   $('imuUse').textContent=imu.roll_used?'en uso para el cálculo':'no se usa en este modo';
   $('imuState').className=`ready ${imu.ok?(Math.abs(imu.roll_deg)<1?'ok':'bad'):'danger'}`;
-  $('imuRoll').textContent=imu.ok?`roll ${imu.roll_deg.toFixed(2)}°`:'sin lectura';
+  const cab=Number.isFinite(imu.pitch_deg)?` · cabeceo ${imu.pitch_deg.toFixed(2)}°${imu.pitch_used?' (en uso)':''}`:'';
+  $('imuRoll').textContent=imu.ok?`roll ${imu.roll_deg.toFixed(2)}°${cab}`:'sin lectura';
   const downCm=(loadedConfig?.lever?.down_m??0)*100;
   const noise=Number.isFinite(imu.roll_noise_deg)?` · dispersión ±${imu.roll_noise_deg.toFixed(2)}°`:'';
   const frozen=imu.accel_gated?' · en marcha: roll congelado, sólo giróscopo':'';
@@ -461,6 +466,7 @@ function updateTelemetry(t){
 
   $('mode').textContent=t.calculation_mode==='3D_IMU'?'3D con IMU'
     :t.calculation_mode==='2D_PITCH'?'2D + inclinación':'2D directo';
+  if(t.attitude.pitch_source==='IMU')$('mode').textContent+=' · cabeceo IMU';
   $('age').textContent=`dato de ${(t.data_age_ms/1000).toFixed(1)} s`;
   setMetric('mMode',stale?'bad':'ok');
 

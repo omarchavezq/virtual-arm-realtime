@@ -4,6 +4,12 @@ Servicio mínimo para calcular la posición de la broca en cada dato recibido de
 
 - `use_imu = false`: brazo 2D fijo, usa posición ANT1 y heading. No espera que la
   máquina se detenga ni que la IMU se estabilice.
+- `use_imu_pitch = true`: además del balanceo, toma el cabeceo del
+  acelerómetro. Medido en drill-001 con la estructura inmóvil, el cabeceo del
+  UM982 vagabundea 1.85° sobre una línea base de 2 m contra los 0.70° del
+  acelerómetro: son 12 cm de broca con un brazo de 3.9 m. Al receptor le queda
+  el rumbo, que es donde sí es preciso. Exige el cero hecho y el signo
+  verificado contra el pitch del UM982.
 - `use_imu = true`: rota el brazo completo con pitch UM982 y roll del
   acelerómetro (MPU6050 o el MPU9250 del GY-91; se detecta solo y se
   publica en `imu.chip`). Cambiar de placa obliga a rehacer «Detectar

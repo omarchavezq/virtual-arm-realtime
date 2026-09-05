@@ -84,7 +84,11 @@ def public_config(config: AppConfig) -> dict:
             "left_m": config.lever.left_m,
             "down_m": config.lever.down_m,
         },
-        "calculation": {"use_imu": config.use_imu, "use_pitch": config.use_pitch},
+        "calculation": {
+            "use_imu": config.use_imu,
+            "use_pitch": config.use_pitch,
+            "use_imu_pitch": config.use_imu_pitch,
+        },
     }
 
 
@@ -111,6 +115,7 @@ def merged_config(current: AppConfig, incoming: ConfigInput) -> AppConfig:
         ),
         use_imu=incoming.calculation.use_imu,
         use_pitch=incoming.calculation.use_pitch,
+        use_imu_pitch=incoming.calculation.use_imu_pitch,
         ntrip=NtripConfig(
             host=incoming.ntrip.host,
             port=incoming.ntrip.port,
@@ -206,6 +211,7 @@ async def _save_imu(imu: ImuConfig) -> dict:
             "axis_mapping": list(imu.axis_mapping),
             "axis_signs": list(imu.axis_signs),
             "roll_offset_deg": imu.roll_offset_deg,
+            "pitch_offset_deg": imu.pitch_offset_deg,
             "roll_invert": imu.roll_invert,
         },
     }
@@ -213,7 +219,7 @@ async def _save_imu(imu: ImuConfig) -> dict:
 
 @app.post("/api/imu/zero")
 async def imu_set_zero() -> dict:
-    """Pone el roll a cero con la máquina nivelada.
+    """Pone balanceo y cabeceo a cero con la máquina nivelada.
 
     El operador nivela contra una referencia externa y pulsa: lo que lea el
     sensor es el desalineamiento del montaje. Se promedia una ventana, no una
@@ -228,6 +234,7 @@ async def imu_set_zero() -> dict:
                 detail="La IMU no está entregando datos; no se puede poner a cero",
             )
         average, spread, count = window
+        pitch_window = runtime.imu.raw_pitch_window()
         required = runtime.imu.zero_samples_required
         if count < required:
             raise HTTPException(
@@ -247,8 +254,19 @@ async def imu_set_zero() -> dict:
             )
         current = runtime.config.imu
         offset = average if current.roll_invert else -average
-        result = await _save_imu(replace(current, roll_offset_deg=offset))
+        # El mismo gesto fija los dos ceros: el operador nivela una vez y lo que
+        # el sensor lea en cada eje es su desalineamiento en el soporte.
+        pitch_offset = -pitch_window[0] if pitch_window else current.pitch_offset_deg
+        result = await _save_imu(
+            replace(current, roll_offset_deg=offset, pitch_offset_deg=pitch_offset)
+        )
         result["window"] = {"average_deg": average, "spread_deg": spread, "samples": count}
+        if pitch_window:
+            result["pitch_window"] = {
+                "average_deg": pitch_window[0],
+                "spread_deg": pitch_window[1],
+                "samples": pitch_window[2],
+            }
         return result
 
 

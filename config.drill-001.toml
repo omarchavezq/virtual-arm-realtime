@@ -20,6 +20,9 @@ down_m = 3.919
 
 [calculation]
 use_imu = false
+# Toma el cabeceo del acelerómetro en vez del UM982. Sólo con el cero de la IMU
+# hecho y el signo verificado contra el pitch del receptor.
+use_imu_pitch = false
 
 [ntrip]
 host = "rtk.geodnet.com"
@@ -43,6 +46,7 @@ accel_bias_g = [-0.0349598866, 0.0550002511, -0.0437921481]
 axis_mapping = [2, 1, 0]
 axis_signs = [-1, -1, -1]
 roll_offset_deg = 0.0
+pitch_offset_deg = 0.0
 # Constante de tiempo del filtro. Subirla si el roll baila con el motor
 # encendido; bajarla sólo si la máquina se ladea más rápido de lo que sigue.
 filter_tau_s = 2.0

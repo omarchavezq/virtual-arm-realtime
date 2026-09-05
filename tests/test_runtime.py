@@ -464,3 +464,51 @@ async def test_the_runtime_tells_the_imu_when_the_machine_moves() -> None:
     runtime.epoch = epoch_at(now, speed=0.01)
     await runtime.recompute(now)
     assert runtime.imu.moving is False
+
+
+@pytest.mark.asyncio
+async def test_the_3d_model_can_take_the_pitch_from_the_imu() -> None:
+    """Medido en drill-001 con la estructura inmóvil: el cabeceo del UM982
+    vagabundea 1.85° sobre una línea base de 2 m y el del acelerómetro 0.70°."""
+    runtime = Runtime(config(use_imu=True, use_imu_pitch=True))
+    now = time.monotonic() * 1000
+    runtime.epoch = epoch_at(now)
+    runtime.heading = heading_at(now, pitch=4.0)
+    runtime.imu.roll_deg = 0.0
+    runtime.imu.pitch_deg = 1.0
+    runtime.imu.received_ms = now
+    payload = await runtime.recompute(now)
+    enu = rotate_lever(2.270004, 1.192078, 3.919, 41.0, 1.0, 0.0, True)
+    _, _, _, east, north = runtime.geodesy.offset(LAT, LON, HEIGHT, enu)
+    assert payload["virtual_gps"]["easting_m"] == pytest.approx(east, abs=1e-6)
+    assert payload["virtual_gps"]["northing_m"] == pytest.approx(north, abs=1e-6)
+    assert payload["attitude"]["pitch_source"] == "IMU"
+    assert payload["attitude"]["pitch_gnss_deg"] == pytest.approx(4.0)
+
+
+@pytest.mark.asyncio
+async def test_the_um982_pitch_is_the_default_source() -> None:
+    runtime = Runtime(config(use_imu=True))
+    now = time.monotonic() * 1000
+    runtime.epoch = epoch_at(now)
+    runtime.heading = heading_at(now, pitch=4.0)
+    runtime.imu.roll_deg = 0.0
+    runtime.imu.pitch_deg = 1.0
+    runtime.imu.received_ms = now
+    payload = await runtime.recompute(now)
+    assert payload["attitude"]["pitch_source"] == "GNSS"
+    assert payload["attitude"]["pitch_deg"] == pytest.approx(4.0)
+
+
+@pytest.mark.asyncio
+async def test_without_imu_pitch_there_is_no_position_when_it_is_the_source() -> None:
+    """Callar es el modo de fallo: mejor sin posición que con una inventada."""
+    runtime = Runtime(config(use_imu=True, use_imu_pitch=True))
+    now = time.monotonic() * 1000
+    runtime.epoch = epoch_at(now)
+    runtime.heading = heading_at(now)
+    runtime.imu.roll_deg = 0.0
+    runtime.imu.pitch_deg = None
+    runtime.imu.received_ms = now
+    payload = await runtime.recompute(now)
+    assert payload["virtual_gps"]["valid"] is False

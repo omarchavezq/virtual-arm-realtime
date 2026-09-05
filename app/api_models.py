@@ -28,6 +28,7 @@ class LeverInput(StrictModel):
 class CalculationInput(StrictModel):
     use_imu: bool
     use_pitch: bool = False
+    use_imu_pitch: bool = False
 
 
 class ConfigInput(StrictModel):

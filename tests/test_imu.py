@@ -255,3 +255,64 @@ def test_only_the_mpu9250_family_gets_the_separate_accelerometer_filter() -> Non
 
     assert 0x68 not in _SEPARATE_ACCEL_FILTER
     assert {0x70, 0x71, 0x73} == set(_SEPARATE_ACCEL_FILTER)
+
+
+# ------------------------------------------------------------------ cabeceo
+
+
+def attitude(pitch_deg: float = 0.0, roll_deg: float = 0.0) -> tuple[float, float, float]:
+    """Gravedad vista por un acelerómetro bien montado, morro arriba positivo.
+
+    Sistema del cuerpo: x adelante, y izquierda, z arriba. A nivel mide +1 g en
+    z; con el morro 90 grados arriba, +1 g en x.
+    """
+    p, r = math.radians(pitch_deg), math.radians(roll_deg)
+    return (math.sin(p), math.cos(p) * math.sin(r), math.cos(p) * math.cos(r))
+
+
+def test_the_accelerometer_pitch_matches_the_um982_convention() -> None:
+    """Morro arriba tiene que dar cabeceo positivo, como el pitch del UM982."""
+    imu = sensor()
+    feed(imu, attitude(pitch_deg=90.0), seconds=20.0)
+    assert imu.pitch_raw_deg == pytest.approx(90.0, abs=0.01)
+    imu = sensor()
+    feed(imu, attitude(pitch_deg=6.0), seconds=20.0)
+    assert imu.pitch_deg == pytest.approx(6.0, abs=0.1)
+
+
+def test_pitch_and_roll_do_not_contaminate_each_other() -> None:
+    imu = sensor()
+    feed(imu, attitude(pitch_deg=5.0, roll_deg=8.0), seconds=20.0)
+    assert imu.pitch_deg == pytest.approx(5.0, abs=0.1)
+    assert imu.roll_deg == pytest.approx(8.0, abs=0.1)
+
+
+def test_the_pitch_gyroscope_sign_agrees_with_the_accelerometer() -> None:
+    """Si no coincidieran, el filtro pelearía consigo mismo y derivaría.
+
+    Girar sobre el eje +izquierda hunde el morro, así que la velocidad de
+    cabeceo lleva signo contrario a la del giróscopo mapeado.
+    """
+    imu = sensor()
+    now = feed(imu, attitude(), seconds=5.0)
+    imu.moving = True
+    feed(imu, attitude(), seconds=2.0, gyro=(0.0, -3.0, 0.0), start=now)
+    assert imu.pitch_deg == pytest.approx(6.0, abs=0.1)
+
+
+def test_the_pitch_zero_offset_is_applied() -> None:
+    imu = sensor(pitch_offset_deg=-4.0)
+    feed(imu, attitude(pitch_deg=4.0), seconds=20.0)
+    assert imu.pitch_raw_deg == pytest.approx(4.0, abs=0.01)
+    assert imu.pitch_deg == pytest.approx(0.0, abs=0.05)
+
+
+def test_an_unstable_pitch_is_not_published_but_the_roll_survives() -> None:
+    imu = sensor()
+    now = feed(imu, attitude(), seconds=5.0)
+    for index in range(300):
+        now += 0.01
+        imu.update(attitude(pitch_deg=6.0 if index % 2 else -6.0), (0.0, 0.0, 0.0), 0.01, now)
+    assert imu.pitch_deg is None
+    assert imu.roll_deg is not None
+    assert "cabeceo" in imu.error.lower()

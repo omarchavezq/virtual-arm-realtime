@@ -86,6 +86,9 @@ class ImuConfig:
     axis_mapping: tuple[int, int, int]
     axis_signs: tuple[int, int, int]
     roll_offset_deg: float
+    # Cero del cabeceo: el desalineamiento del sensor en su soporte. Se fija con
+    # el mismo botón que el del balanceo, con la máquina nivelada.
+    pitch_offset_deg: float = 0.0
     # Invierte el signo del roll sin tocar el mapeo de ejes, como el botón
     # «invert roll» de AgOpenGPS: es la corrección que más se necesita en campo.
     roll_invert: bool = False
@@ -112,6 +115,10 @@ class AppConfig:
     imu: ImuConfig
     # Corrige el brazo con el pitch del UM982 (dos antenas), sin IMU.
     use_pitch: bool = False
+    # En 3D, toma el cabeceo del acelerómetro en vez del UM982. Medido en
+    # drill-001 con la estructura inmóvil: el del UM982 vagabundea 1.85° sobre
+    # una línea base de 2 m, el del acelerómetro 0.70°.
+    use_imu_pitch: bool = False
 
 
 def _triple(values: object, name: str, cast: type = float) -> tuple:
@@ -152,7 +159,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     _exact_keys(c, "coordinates", {"projected_crs"})
     _exact_keys(lever, "lever", {"forward_m", "left_m", "down_m"})
     # `use_pitch` es opcional: los config.toml anteriores no lo traen.
-    _exact_keys(calc, "calculation", {"use_imu"}, frozenset({"use_pitch"}))
+    _exact_keys(
+        calc, "calculation", {"use_imu"}, frozenset({"use_pitch", "use_imu_pitch"})
+    )
     _exact_keys(
         n,
         "ntrip",
@@ -174,7 +183,13 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             "roll_offset_deg",
         },
         frozenset(
-            {"roll_invert", "filter_tau_s", "max_tilt_deg", "max_roll_noise_deg"}
+            {
+                "roll_invert",
+                "pitch_offset_deg",
+                "filter_tau_s",
+                "max_tilt_deg",
+                "max_roll_noise_deg",
+            }
         ),
     )
 
@@ -193,6 +208,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         ),
         use_imu=bool(calc["use_imu"]),
         use_pitch=bool(calc.get("use_pitch", False)),
+        use_imu_pitch=bool(calc.get("use_imu_pitch", False)),
         ntrip=NtripConfig(
             host=str(n["host"]),
             port=int(n["port"]),
@@ -212,6 +228,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             axis_mapping=_triple(i["axis_mapping"], "axis_mapping", int),
             axis_signs=_triple(i["axis_signs"], "axis_signs", int),
             roll_offset_deg=float(i["roll_offset_deg"]),
+            pitch_offset_deg=float(i.get("pitch_offset_deg", 0.0)),
             roll_invert=bool(i.get("roll_invert", False)),
             filter_tau_s=float(i.get("filter_tau_s", 2.0)),
             max_tilt_deg=float(i.get("max_tilt_deg", 45.0)),
@@ -269,6 +286,7 @@ down_m = {config.lever.down_m:.6f}
 [calculation]
 use_imu = {str(config.use_imu).lower()}
 use_pitch = {str(config.use_pitch).lower()}
+use_imu_pitch = {str(config.use_imu_pitch).lower()}
 
 [ntrip]
 host = {quote(config.ntrip.host)}
@@ -289,6 +307,7 @@ accel_bias_g = {list(config.imu.accel_bias_g)}
 axis_mapping = {list(config.imu.axis_mapping)}
 axis_signs = {list(config.imu.axis_signs)}
 roll_offset_deg = {config.imu.roll_offset_deg}
+pitch_offset_deg = {config.imu.pitch_offset_deg}
 roll_invert = {str(config.imu.roll_invert).lower()}
 filter_tau_s = {config.imu.filter_tau_s}
 max_tilt_deg = {config.imu.max_tilt_deg}

@@ -240,9 +240,13 @@ def test_imu_zero_averages_the_window_and_makes_it_the_new_zero(client, config_f
     En drill-001 el acelerómetro dispersaba ±1° con el motor encendido: el cero
     salió 1.4° corrido, que en la broca de la perforadora son 10 cm.
     """
-    client.runtime.imu._raw_recent.extend([8.19] * 100 + [9.19] * 100)
+    client.runtime.imu._roll.raw_recent.extend([8.19] * 100 + [9.19] * 100)
+    client.runtime.imu._pitch.raw_recent.extend([1.0] * 200)
     body = client.post("/api/imu/zero").json()
     assert body["imu"]["roll_offset_deg"] == pytest.approx(-8.69)
+    # El mismo gesto fija los dos ceros: se nivela una vez.
+    assert body["imu"]["pitch_offset_deg"] == pytest.approx(-1.0)
+    assert body["pitch_window"]["samples"] == 200
     assert body["window"]["samples"] == 200
     assert body["window"]["spread_deg"] == pytest.approx(0.5)
     from app.config import load_config as lc
@@ -251,7 +255,7 @@ def test_imu_zero_averages_the_window_and_makes_it_the_new_zero(client, config_f
 
 
 def test_imu_zero_refuses_a_window_that_is_only_noise(client) -> None:
-    client.runtime.imu._raw_recent.extend(
+    client.runtime.imu._roll.raw_recent.extend(
         [-6.0 if index % 2 else 6.0 for index in range(200)]
     )
     response = client.post("/api/imu/zero")
@@ -260,7 +264,7 @@ def test_imu_zero_refuses_a_window_that_is_only_noise(client) -> None:
 
 
 def test_imu_zero_needs_enough_quiet_samples(client) -> None:
-    client.runtime.imu._raw_recent.extend([1.0] * 10)
+    client.runtime.imu._roll.raw_recent.extend([1.0] * 10)
     response = client.post("/api/imu/zero")
     assert response.status_code == 409
     assert "faltan lecturas quietas" in response.json()["detail"]
