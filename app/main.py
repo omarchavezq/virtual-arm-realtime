@@ -301,7 +301,16 @@ async def imu_detect_axes() -> dict:
                 ),
             )
         rest = [i for i in range(3) if i != vertical]
-        mapping = (rest[0], rest[1], vertical)
+        # Conservar cuál eje del sensor mira adelante y cuál a la izquierda. La
+        # gravedad no lo puede deducir —sólo dice cuál es el vertical— y se
+        # averigua ladeando la máquina. Reordenarlos aquí borraría ese trabajo:
+        # en drill-001 el sensor está atornillado girado 90° y el mapeo correcto
+        # es [1, 0, 2]; el orden por defecto devolvería el error en silencio.
+        horizontal = list(runtime.config.imu.axis_mapping[:2])
+        if set(horizontal) == set(rest):
+            mapping = (horizontal[0], horizontal[1], vertical)
+        else:
+            mapping = (rest[0], rest[1], vertical)
         signs = list(runtime.config.imu.axis_signs)
         signs[2] = 1 if raw[vertical] > 0 else -1
         current = runtime.config.imu

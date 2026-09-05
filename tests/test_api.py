@@ -295,3 +295,24 @@ def test_detect_axes_refuses_while_the_machine_moves(client) -> None:
     response = client.post("/api/imu/detect-axes")
     assert response.status_code == 409
     assert "quieta" in response.json()["detail"]
+
+
+def test_detect_axes_keeps_which_horizontal_axis_looks_forward(client, config_file) -> None:
+    """La gravedad sólo dice cuál eje es el vertical.
+
+    Cuál de los otros dos mira adelante se averigua ladeando la máquina, y en
+    drill-001 costó dos días descubrir que el sensor está girado 90°. Volver a
+    pulsar el botón no puede deshacerlo.
+    """
+    from dataclasses import replace
+
+    from app.config import load_config as lc
+
+    girado = replace(client.runtime.config.imu, axis_mapping=(1, 0, 2), axis_signs=(1, -1, 1))
+    client.runtime.config = replace(client.runtime.config, imu=girado)
+    client.runtime.imu.raw_g = (-0.02, -0.09, 0.94)
+    body = client.post("/api/imu/detect-axes").json()
+    assert body["detected"]["vertical_axis"] == "Z"
+    assert body["imu"]["axis_mapping"] == [1, 0, 2]
+    assert body["imu"]["axis_signs"] == [1, -1, 1]
+    assert lc(config_file).imu.axis_mapping == (1, 0, 2)

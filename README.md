@@ -74,13 +74,21 @@ recoloca o se cambia de placa. El brazo medido con cinta no se toca.
    que el cero acabaría tapando sin dejar rastro de dónde salieron.
 3. Con la máquina quieta —no hace falta nivelarla—, **Detectar ejes**. Resuelve
    cuál eje sostiene la gravedad, que es lo único que hace inservible el roll
-   cuando está cruzado. El eje Z debe quedar en ±1.000 g.
+   cuando está cruzado. El eje Z debe quedar en ±1.000 g. Lo que **no** puede
+   deducir es cuál de los otros dos mira adelante: eso sale del paso 5, y el
+   botón conserva esa parte si el vertical no cambia. En drill-001 el sensor
+   está atornillado girado 90° y el mapeo correcto es `[1, 0, 2]` con signos
+   `[1, -1, 1]`; con el orden por defecto, el cabeceo de la máquina entraba en
+   el cálculo como balanceo y la corrección empujaba la broca en perpendicular.
 4. Nivelar con los gatos contra un nivel de burbuja, esperar unos segundos y
    pulsar **Poner roll a cero**. Promedia cinco segundos y devuelve media,
    dispersión y número de muestras; si dispersa más de `max_roll_noise_deg` no
    acepta el cero en vez de grabar el ruido del momento como offset permanente.
 5. Ladear la máquina a la derecha: el roll tiene que subir. Si baja, **Invertir
-   signo**.
+   signo**. Después levantar el morro: el cabeceo de la IMU y el del UM982
+   —`imu.pitch_deg` y `attitude.pitch_gnss_deg`— tienen que subir los dos y en
+   la misma cantidad. Si se mueven en direcciones opuestas, los ejes
+   horizontales están cruzados y hay que intercambiarlos en `axis_mapping`.
 6. Comparar la magnitud contra un inclinómetro apoyado en el chasis. Si el nivel
    marca 5° y la IMU marca 3.5°, el sensor está girado respecto al eje de
    balanceo y la corrección se quedará corta en esa proporción.
