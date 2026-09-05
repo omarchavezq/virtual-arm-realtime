@@ -45,11 +45,45 @@ La interfaz usa únicamente:
   servicio, para el relevo con `virtual-rtk` sin entrar por SSH. Al liberar
   también se corta el NTRIP. El estado **no se persiste**: reiniciar el servicio
   vuelve siempre al puerto conectado.
+- `POST /api/imu/detect-axes`, `/api/imu/zero` y `/api/imu/invert`: calibración
+  del sensor de inclinación. El procedimiento está más abajo.
 - `GET /api/v1/telemetry/stream`: estado y posición en tiempo real.
 
 Los cambios se guardan de forma atómica y se aplican en caliente. Cambiar sólo el
 brazo, el CRS o el modo no cierra el puerto GNSS; cambiar NTRIP reconecta únicamente
 la sesión NTRIP.
+
+## Calibración de la IMU
+
+El sesgo del giróscopo se aprende solo: converge en unos dos minutos con la
+máquina parada, y el valor del archivo ya no se usa. Todo lo demás se hace una
+vez por montaje, no cada jornada, y hay que rehacerlo si el sensor se mueve, se
+recoloca o se cambia de placa. El brazo medido con cinta no se toca.
+
+1. Confirmar el chip. La pantalla lo muestra junto al título del panel y la
+   telemetría en `imu.chip`. Un `desconocido`, o un modelo que no es el que está
+   instalado, significa que no se está hablando con lo que se cree.
+2. Poner `accel_bias_g` y `gyro_bias_dps` en ceros si vienen de otro sensor, y
+   reiniciar. Son taras de una placa concreta: heredarlas son grados de desvío
+   que el cero acabaría tapando sin dejar rastro de dónde salieron.
+3. Con la máquina quieta —no hace falta nivelarla—, **Detectar ejes**. Resuelve
+   cuál eje sostiene la gravedad, que es lo único que hace inservible el roll
+   cuando está cruzado. El eje Z debe quedar en ±1.000 g.
+4. Nivelar con los gatos contra un nivel de burbuja, esperar unos segundos y
+   pulsar **Poner roll a cero**. Promedia cinco segundos y devuelve media,
+   dispersión y número de muestras; si dispersa más de `max_roll_noise_deg` no
+   acepta el cero en vez de grabar el ruido del momento como offset permanente.
+5. Ladear la máquina a la derecha: el roll tiene que subir. Si baja, **Invertir
+   signo**.
+6. Comparar la magnitud contra un inclinómetro apoyado en el chasis. Si el nivel
+   marca 5° y la IMU marca 3.5°, el sensor está girado respecto al eje de
+   balanceo y la corrección se quedará corta en esa proporción.
+7. Con RTK fijo y la broca sobre un punto conocido: anotar el error con la
+   máquina nivelada, ladearla y comprobar que la broca reportada **no se mueve**.
+   Es la misma comprobación que `tests/test_lever_3d.py` hace en sintético.
+
+Los pasos 3 y 4 reinician el sensor, así que el sesgo del giróscopo vuelve a
+empezar de cero: hay que esperar esos dos minutos antes de juzgar el resultado.
 
 ## Ejecución local de pruebas
 
