@@ -12,6 +12,25 @@ from app.config import ImuConfig
 _ACCEL_BITS = {2: 0x00, 4: 0x08, 8: 0x10, 16: 0x18}
 _GYRO_BITS = {250: 0x00, 500: 0x08, 1000: 0x10, 2000: 0x18}
 
+# Lo que contesta el registro WHO_AM_I. El mapa de registros de accel y giro es
+# el mismo en toda la familia, así que el driver sirve para las cuatro; se lee
+# para saber con qué se está hablando y para el filtro que sólo tiene el 9250.
+_WHO_AM_I = 0x75
+_CHIP_NAMES = {0x68: "MPU6050", 0x70: "MPU6500", 0x71: "MPU9250", 0x73: "MPU9255"}
+# En el MPU6050 el registro 0x1A filtra giróscopo y acelerómetro juntos. En el
+# 9250 —el chip del GY-91— sólo filtra el giróscopo: el acelerómetro tiene el
+# suyo en 0x1D y arranca en 460 Hz, es decir, prácticamente sin filtrar. Sin
+# escribirlo, toda la vibración del motor entra en el ángulo.
+_ACCEL_CONFIG_2 = 0x1D
+_ACCEL_DLPF_41HZ = 0x03
+_SEPARATE_ACCEL_FILTER = frozenset({0x70, 0x71, 0x73})
+
+
+def _chip_name(who_am_i: int | None) -> str:
+    if who_am_i is None:
+        return ""
+    return _CHIP_NAMES.get(who_am_i, f"desconocido (0x{who_am_i:02X})")
+
 # Fuera de esta banda el acelerómetro no está midiendo sólo gravedad: la máquina
 # acelera, frena o vibra fuerte. El ángulo que saldría no sería inclinación.
 _MIN_ACCEL_G = 0.85
@@ -50,7 +69,10 @@ def _signed(high: int, low: int) -> int:
 
 
 class RollSensor:
-    """Roll del MPU6050, con compuerta por movimiento y control de plausibilidad.
+    """Roll del acelerómetro, con compuerta por movimiento y plausibilidad.
+
+    Sirve para la familia MPU6050 / 6500 / 9250 (el chip del GY-91): comparten
+    el mapa de registros de acelerómetro y giróscopo.
 
     Un roll equivocado no se nota: corre la broca en silencio y la pantalla
     sigue diciendo PRECISION. Por eso el sensor calla —`roll_deg = None`, que
@@ -76,6 +98,10 @@ class RollSensor:
         self.tilt_from_vertical_deg: float | None = None
         self.orientation_ok = True
         self.accel_gated = False
+        # Con qué chip se está hablando. Cambiar de placa cambia la orientación
+        # de los ejes y las taras: verlo publicado evita calibrar a ciegas.
+        self.chip_id: int | None = None
+        self.chip_name = ""
         # Sesgo del eje de balanceo, aprendido en marcha. Se publica porque un
         # valor que no para de crecer delata un sensor o un mapeo malos.
         self.rate_bias_dps = 0.0
@@ -98,7 +124,7 @@ class RollSensor:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="roll-mpu6050")
+        self._thread = threading.Thread(target=self._run, daemon=True, name="roll-imu")
         self._thread.start()
 
     def stop(self) -> None:
@@ -136,11 +162,15 @@ class RollSensor:
                 bus_number = int(self.config.bus.rsplit("-", 1)[-1])
                 with SMBus(bus_number) as bus:
                     a = self.config.address
+                    self.chip_id = bus.read_byte_data(a, _WHO_AM_I)
+                    self.chip_name = _chip_name(self.chip_id)
                     bus.write_byte_data(a, 0x6B, 0x01)
                     bus.write_byte_data(
                         a, 0x19, max(0, round(1000 / self.config.sample_rate_hz) - 1)
                     )
                     bus.write_byte_data(a, 0x1A, 0x03)
+                    if self.chip_id in _SEPARATE_ACCEL_FILTER:
+                        bus.write_byte_data(a, _ACCEL_CONFIG_2, _ACCEL_DLPF_41HZ)
                     bus.write_byte_data(a, 0x1C, _ACCEL_BITS[self.config.accel_range_g])
                     bus.write_byte_data(a, 0x1B, _GYRO_BITS[self.config.gyro_range_dps])
                     self.error = ""

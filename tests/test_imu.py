@@ -234,3 +234,24 @@ def test_a_real_tilt_is_not_swallowed_by_the_bias_estimator() -> None:
     now = feed(imu, gravity(0.0), seconds=60.0)
     feed(imu, gravity(8.0), seconds=30.0, start=now)
     assert imu.roll_deg == pytest.approx(8.0, abs=0.3)
+
+
+# ------------------------------------------------------------- identificación
+
+
+def test_the_chip_is_named_from_who_am_i() -> None:
+    """El GY-91 lleva un MPU9250, no el MPU6050 del montaje original."""
+    from app.imu import _chip_name
+
+    assert _chip_name(0x68) == "MPU6050"
+    assert _chip_name(0x71) == "MPU9250"
+    assert _chip_name(None) == ""
+    assert "0x42" in _chip_name(0x42)
+
+
+def test_only_the_mpu9250_family_gets_the_separate_accelerometer_filter() -> None:
+    """En el 6050 el registro 0x1D no es el filtro del acelerómetro."""
+    from app.imu import _SEPARATE_ACCEL_FILTER
+
+    assert 0x68 not in _SEPARATE_ACCEL_FILTER
+    assert {0x70, 0x71, 0x73} == set(_SEPARATE_ACCEL_FILTER)

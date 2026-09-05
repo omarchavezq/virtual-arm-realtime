@@ -89,7 +89,7 @@
   </section>
 
   <section class="panel">
-    <h3>Sensor de inclinación (IMU) <span class="tag" id="imuUse">no se usa en este modo</span></h3>
+    <h3>Sensor de inclinación (IMU) <span class="tag" id="imuChip">—</span> <span class="tag" id="imuUse">no se usa en este modo</span></h3>
     <div id="imuState" class="ready"><span id="imuText">Comprobando…</span><strong id="imuRoll">—</strong></div>
     <div class="grid four">
       <div><label>Eje X<input id="axX" disabled></label></div>
@@ -391,6 +391,7 @@ function updateTelemetry(t){
   $('connection').className=`chip ${paused||stale?'bad':'ok'}`;
 
   const imu=t.imu||{};
+  $('imuChip').textContent=imu.chip||'sin identificar';
   $('imuUse').textContent=imu.roll_used?'en uso para el cálculo':'no se usa en este modo';
   $('imuState').className=`ready ${imu.ok?(Math.abs(imu.roll_deg)<1?'ok':'bad'):'danger'}`;
   $('imuRoll').textContent=imu.ok?`roll ${imu.roll_deg.toFixed(2)}°`:'sin lectura';

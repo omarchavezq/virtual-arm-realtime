@@ -4,7 +4,10 @@ Servicio mínimo para calcular la posición de la broca en cada dato recibido de
 
 - `use_imu = false`: brazo 2D fijo, usa posición ANT1 y heading. No espera que la
   máquina se detenga ni que la IMU se estabilice.
-- `use_imu = true`: rota el brazo completo con pitch UM982 y roll MPU6050.
+- `use_imu = true`: rota el brazo completo con pitch UM982 y roll del
+  acelerómetro (MPU6050 o el MPU9250 del GY-91; se detecta solo y se
+  publica en `imu.chip`). Cambiar de placa obliga a rehacer «Detectar
+  ejes» y el cero: el mapeo y las taras describen el sensor anterior.
 - Salida del cliente: `GET /api/v1/telemetry/stream` en SSE, compatible con `gpsevt`.
   El estado se republica cada 500 ms aunque no lleguen tramas, para que una
   pantalla congelada se delate por la edad del dato.

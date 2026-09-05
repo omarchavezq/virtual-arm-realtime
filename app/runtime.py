@@ -475,6 +475,7 @@ class Runtime:
             },
             "imu": {
                 "ok": measured_roll is not None,
+                "chip": self.imu.chip_name,
                 "error": imu_error,
                 "age_ms": int(imu_age) if imu_age is not None else None,
                 "roll_deg": measured_roll,
