@@ -236,6 +236,14 @@ async def imu_set_zero() -> dict:
         average, spread, count = window
         pitch_window = runtime.imu.raw_pitch_window()
         required = runtime.imu.zero_samples_required
+        if runtime.imu.accel_gated or runtime.imu.moving:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "La máquina se está moviendo: el cero se grabaría con la "
+                    "inclinación del momento. Deténgala, nivele y repita"
+                ),
+            )
         if count < required:
             raise HTTPException(
                 status_code=409,
@@ -244,12 +252,15 @@ async def imu_set_zero() -> dict:
                     "detenida unos segundos y repita"
                 ),
             )
-        if spread > runtime.config.imu.max_roll_noise_deg:
+        limit = runtime.config.imu.zero_max_spread_deg
+        worst = max(spread, pitch_window[1] if pitch_window else 0.0)
+        if worst > limit:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    f"el roll dispersa ±{spread:.1f}° en la ventana: el cero saldría "
-                    "de ruido. Apague el motor o revise el montaje y repita"
+                    f"la ventana dispersa ±{worst:.2f}° y el tope es {limit:g}°: el cero "
+                    "saldría corrido. Espere a que la máquina esté quieta del todo, "
+                    "o baje el motor a ralentí, y repita"
                 ),
             )
         current = runtime.config.imu

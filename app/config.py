@@ -103,6 +103,12 @@ class ImuConfig:
     # sensor sano se queda en décimas de grado; el que estaba mal mapeado daba
     # más de 10°.
     max_roll_noise_deg: float = 2.0
+    # Dispersión máxima de la ventana de «Poner a cero». Más estricta que la
+    # anterior porque el cero queda grabado como offset permanente: en la
+    # perforadora, 0.85° de dispersión —la máquina arrancando durante la
+    # ventana— dejaron el cero corrido 1.5°, 13 cm de broca con un brazo de 5 m.
+    # Al ralentí la ventana dispersa 0.3-0.4°.
+    zero_max_spread_deg: float = 0.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +195,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                 "filter_tau_s",
                 "max_tilt_deg",
                 "max_roll_noise_deg",
+                "zero_max_spread_deg",
             }
         ),
     )
@@ -233,6 +240,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             filter_tau_s=float(i.get("filter_tau_s", 2.0)),
             max_tilt_deg=float(i.get("max_tilt_deg", 45.0)),
             max_roll_noise_deg=float(i.get("max_roll_noise_deg", 2.0)),
+            zero_max_spread_deg=float(i.get("zero_max_spread_deg", 0.5)),
         ),
     )
     if config.gnss.rate_hz < 5 or config.gnss.rate_hz > 20:
@@ -259,6 +267,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raise ValueError("imu.max_tilt_deg debe estar entre 0 y 90")
     if config.imu.max_roll_noise_deg <= 0:
         raise ValueError("imu.max_roll_noise_deg debe ser mayor que cero")
+    if config.imu.zero_max_spread_deg <= 0:
+        raise ValueError("imu.zero_max_spread_deg debe ser mayor que cero")
     return config
 
 
@@ -312,6 +322,7 @@ roll_invert = {str(config.imu.roll_invert).lower()}
 filter_tau_s = {config.imu.filter_tau_s}
 max_tilt_deg = {config.imu.max_tilt_deg}
 max_roll_noise_deg = {config.imu.max_roll_noise_deg}
+zero_max_spread_deg = {config.imu.zero_max_spread_deg}
 """
     temporary = target.with_name(f".{target.name}.tmp")
     temporary.write_text(text, encoding="utf-8", newline="\n")

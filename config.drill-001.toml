@@ -55,4 +55,7 @@ filter_tau_s = 2.0
 # detenida. Sin estos topes, un mapeo cruzado corre la broca en silencio.
 max_tilt_deg = 45.0
 max_roll_noise_deg = 2.0
+# Más estricto que el anterior: el cero queda grabado como offset permanente y
+# con un brazo de 5 m cada décima de grado es casi un centímetro.
+zero_max_spread_deg = 0.5
 

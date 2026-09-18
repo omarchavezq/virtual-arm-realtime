@@ -263,6 +263,26 @@ def test_imu_zero_refuses_a_window_that_is_only_noise(client) -> None:
     assert "dispersa" in response.json()["detail"]
 
 
+def test_imu_zero_refuses_a_window_the_machine_moved_through(client) -> None:
+    """En la perforadora, 0.85° de dispersión —la máquina arrancando durante la
+    ventana— dejaron el cero corrido 1.5°: 13 cm de broca con un brazo de 5 m.
+    El umbral del ruido (2°) lo dejó pasar; el del cero no puede."""
+    client.runtime.imu._roll.raw_recent.extend([0.4] * 100 + [-1.5] * 100)
+    client.runtime.imu._pitch.raw_recent.extend([0.5] * 200)
+    response = client.post("/api/imu/zero")
+    assert response.status_code == 409
+    assert "corrido" in response.json()["detail"]
+
+
+def test_imu_zero_refuses_while_the_machine_moves(client) -> None:
+    client.runtime.imu._roll.raw_recent.extend([0.4] * 200)
+    client.runtime.imu._pitch.raw_recent.extend([0.5] * 200)
+    client.runtime.imu.moving = True
+    response = client.post("/api/imu/zero")
+    assert response.status_code == 409
+    assert "moviendo" in response.json()["detail"]
+
+
 def test_imu_zero_needs_enough_quiet_samples(client) -> None:
     client.runtime.imu._roll.raw_recent.extend([1.0] * 10)
     response = client.post("/api/imu/zero")
